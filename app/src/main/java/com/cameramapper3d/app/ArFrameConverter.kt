@@ -23,9 +23,9 @@ object ArFrameConverter {
      *   instead of the smoothed, hole-filled depth.
      * @param lastDepthTimestamp the timestamp of the previously fused depth image, so the same
      *   depth map is never fused twice.
-     * @param poseAt camera pose (column-major camera-to-world) of a recent frame by timestamp.
-     *   Depth can arrive a frame or two after the camera image it was computed from, so it must be
-     *   paired with that image's pose rather than the current one.
+     * @param poseAt camera pose (column-major camera-to-world) recorded nearest to a timestamp, or null.
+     *   Depth can arrive a frame or two after the camera image it was computed from, so it is
+     *   paired with that image's pose when known rather than the current one.
      * @return null if no new depth is available for this frame.
      */
     fun capture(
@@ -64,13 +64,10 @@ object ArFrameConverter {
             }
         }
 
-        // Pair the depth with the pose of the camera image it came from. If that frame is no longer
-        // in the history (depth older than ~1 s), skip it rather than fuse it in the wrong place.
-        val pose = if (ts == frame.timestamp) {
-            FloatArray(16).also { camera.pose.toMatrix(it, 0) } // sensor-oriented, matches CPU intrinsics
-        } else {
-            poseAt(ts) ?: return null
-        }
+        // Pair the depth with the pose of the camera image it came from (or the nearest one we saw).
+        // If there is none, use the current pose: slightly blurrier, but never drop the depth.
+        val pose = (if (ts == frame.timestamp) null else poseAt(ts))
+            ?: FloatArray(16).also { camera.pose.toMatrix(it, 0) } // sensor-oriented, matches CPU intrinsics
 
         var usable = 0
         val minMm = (params.minDepth * 1000).toInt()

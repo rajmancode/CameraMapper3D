@@ -23,6 +23,7 @@ import com.cameramapper3d.app.gl.BackgroundRenderer
 import com.cameramapper3d.app.gl.MeshRenderer
 import com.cameramapper3d.app.gl.ShadeMode
 import com.cameramapper3d.core.IntegrationParams
+import com.cameramapper3d.core.PoseHistory
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Camera
 import com.google.ar.core.Config
@@ -66,7 +67,7 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var lastDepthTimestamp = 0L
 
     // Recent camera poses by timestamp, so late-arriving depth is placed where it was captured.
-    private val poseHistory = ArrayDeque<Pair<Long, FloatArray>>()
+    private val poseHistory = PoseHistory(capacity = POSE_HISTORY)
 
     // Depth diagnostics (GL thread), shown in the status line.
     private var lastUsableFraction = -1f
@@ -316,11 +317,10 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private fun rememberPose(timestamp: Long, camera: Camera) {
         val m = FloatArray(16)
         camera.pose.toMatrix(m, 0)
-        poseHistory.addLast(timestamp to m)
-        while (poseHistory.size > POSE_HISTORY) poseHistory.removeFirst()
+        poseHistory.add(timestamp, m)
     }
 
-    private fun poseAt(timestamp: Long): FloatArray? = poseHistory.lastOrNull { it.first == timestamp }?.second
+    private fun poseAt(timestamp: Long): FloatArray? = poseHistory.nearest(timestamp, MAX_POSE_GAP_NS)
 
     private fun captureDepth(frame: com.google.ar.core.Frame) {
         val params = integrationParams()
@@ -399,6 +399,7 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         private const val REQUEST_CAMERA = 1
         private const val TAG = "ScanActivity"
         private const val POSE_HISTORY = 60
+        private const val MAX_POSE_GAP_NS = 100_000_000L
         /** ~70/255: phones without a ToF sensor report mostly mid-range confidence. */
         private const val DEFAULT_CONFIDENCE_PERCENT = 25
         private const val MIN_USABLE_FRACTION = 0.01f
