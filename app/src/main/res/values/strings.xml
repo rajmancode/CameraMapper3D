@@ -1,0 +1,28 @@
+<resources>
+    <string name="app_name">CameraMapper3D</string>
+    <string name="new_scan">New scan</string>
+    <string name="no_scans">No scans yet.\nTap “New scan” and slowly walk around the site with the camera pointed at it.</string>
+    <string name="detail_label">Detail</string>
+    <string name="start">Start</string>
+    <string name="pause">Pause</string>
+    <string name="reset">Reset</string>
+    <string name="finish">Finish</string>
+    <string name="view_color">Colour</string>
+    <string name="view_shaded">Shaded</string>
+    <string name="raw_depth">Accurate depth</string>
+    <string name="camera_permission_needed">Camera permission is needed to scan.</string>
+    <string name="depth_not_supported">This phone does not support the ARCore Depth API, which is required for 3D scanning.</string>
+    <string name="arcore_failed">ARCore could not start: %1$s</string>
+    <string name="saving">Building and saving the 3D model…</string>
+    <string name="nothing_scanned">Nothing has been scanned yet.</string>
+    <string name="memory_limit">Scan memory limit reached. Finish this scan, or use a coarser detail level for large sites.</string>
+    <string name="hint_start">Point the camera at the site and tap Start. Move slowly and cover surfaces from several angles.</string>
+    <string name="export_ply">PLY</string>
+    <string name="export_obj">OBJ</string>
+    <string name="measure_hint">Tap two points on the model to measure.</string>
+    <string name="clear_measure">Clear</string>
+    <string name="delete">Delete</string>
+    <string name="delete_confirm">Delete this scan?</string>
+    <string name="cancel">Cancel</string>
+    <string name="load_failed">Could not open the scan: %1$s</string>
+</resources>

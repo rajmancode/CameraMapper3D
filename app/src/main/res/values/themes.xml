@@ -1,0 +1,18 @@
+<resources>
+    <style name="Theme.CameraMapper3D" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">#2E7D6B</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#F2A541</item>
+    </style>
+
+    <style name="Theme.CameraMapper3D.Fullscreen">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+
+    <style name="Overlay.Text" parent="">
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:background">#99000000</item>
+        <item name="android:padding">10dp</item>
+    </style>
+</resources>
