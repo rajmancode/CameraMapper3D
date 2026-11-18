@@ -1,0 +1,139 @@
+"""Generates the RajmanTech logo (SVG + Android vector drawables) from one definition.
+
+Run: python3 branding/make_logo.py   (needs fonttools and the Inter Display font)
+"""
+import os
+from fontTools.ttLib import TTFont
+from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.transformPen import TransformPen
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+RES = os.path.join(HERE, "..", "app", "src", "main", "res", "drawable")
+FONTS = "/usr/share/fonts/opentype/inter"
+
+TEAL_LIGHT = "#2DD4BF"
+TEAL = "#0D9488"
+NAVY = "#0F2A44"
+AMBER = "#F59E0B"
+
+# --- Mark: hexagon (an isometric cube silhouette, a nod to 3D) with a geometric "R" whose
+# leg ends in a circuit node. Drawn in a 120x120 box.
+HEX = "M60,6 L106.8,33 L106.8,87 L60,114 L13.2,87 L13.2,33 Z"
+R_STEM = "M45,37 L45,85"
+R_BOWL = "M45,37 L63,37 A13.5,13.5 0 0 1 63,64 L45,64"
+R_LEG = "M60,64 L74,80"
+NODE = (78.5, 85.5, 6.5)
+STROKE = 10.5
+
+
+def text_path(text, font_file, size, x, baseline):
+    """Returns (svg path data, advance width) for text set in a font, as outlines."""
+    font = TTFont(os.path.join(FONTS, font_file))
+    gs = font.getGlyphSet()
+    cmap = font.getBestCmap()
+    scale = size / font["head"].unitsPerEm
+    pen = SVGPathPen(gs)
+    cursor = 0.0
+    for ch in text:
+        name = cmap[ord(ch)]
+        tp = TransformPen(pen, (scale, 0, 0, -scale, x + cursor, baseline))
+        gs[name].draw(tp)
+        cursor += gs[name].width * scale
+    return pen.getCommands(), cursor
+
+
+def mark_svg_elements(with_gradient_id="g"):
+    cx, cy, r = NODE
+    return f"""
+  <path d="{HEX}" fill="url(#{with_gradient_id})" stroke="url(#{with_gradient_id})" stroke-width="8" stroke-linejoin="round"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="{STROKE}" stroke-linecap="round" stroke-linejoin="round">
+    <path d="{R_STEM}"/><path d="{R_BOWL}"/><path d="{R_LEG}"/>
+  </g>
+  <circle cx="{cx}" cy="{cy}" r="{r}" fill="{AMBER}" stroke="#FFFFFF" stroke-width="3"/>"""
+
+
+GRADIENT = f"""<linearGradient id="g" x1="20" y1="10" x2="100" y2="112" gradientUnits="userSpaceOnUse">
+    <stop offset="0" stop-color="{TEAL_LIGHT}"/><stop offset="1" stop-color="{NAVY}"/></linearGradient>"""
+
+
+def build():
+    size = 62
+    baseline = 60 + size * 0.36  # visually centre the capitals on the mark
+    rajman, w1 = text_path("Rajman", "InterDisplay-ExtraBold.otf", size, 140, baseline)
+    tech, w2 = text_path("Tech", "InterDisplay-SemiBold.otf", size, 140 + w1 + 3, baseline)
+    width = int(140 + w1 + 3 + w2 + 8)
+
+    def logo(word_color):
+        return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} 120" width="{width * 2}" height="240">
+  <title>RajmanTech</title>
+  <defs>{GRADIENT}</defs>{mark_svg_elements()}
+  <path d="{rajman}" fill="{word_color}"/>
+  <path d="{tech}" fill="{TEAL}"/>
+</svg>
+"""
+
+    files = {
+        "rajmantech-logo.svg": logo(NAVY),
+        "rajmantech-logo-dark-bg.svg": logo("#FFFFFF").replace(f'fill="{TEAL}"', f'fill="{TEAL_LIGHT}"'),
+        "rajmantech-mark.svg": f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="512" height="512">
+  <title>RajmanTech</title>
+  <defs>{GRADIENT}</defs>{mark_svg_elements()}
+</svg>
+""",
+    }
+    for name, content in files.items():
+        with open(os.path.join(HERE, name), "w") as f:
+            f.write(content)
+
+    # --- Android vector drawables. Strokes and gradients are supported natively on API 24+.
+    def grad_attr(x1, y1, x2, y2):
+        return f"""<aapt:attr name="android:fillColor">
+                <gradient android:type="linear" android:startX="{x1}" android:startY="{y1}" android:endX="{x2}" android:endY="{y2}">
+                    <item android:offset="0" android:color="{TEAL_LIGHT}" />
+                    <item android:offset="1" android:color="{NAVY}" />
+                </gradient>
+            </aapt:attr>"""
+
+    def mark_vector_paths():
+        cx, cy, r = NODE
+        circle = f"M{cx - r},{cy} a{r},{r} 0 1,0 {2 * r},0 a{r},{r} 0 1,0 {-2 * r},0 Z"
+        return f"""
+        <path android:pathData="{HEX}" android:strokeWidth="8" android:strokeLineJoin="round">
+            {grad_attr(20, 10, 100, 112)}
+            <aapt:attr name="android:strokeColor">
+                <gradient android:type="linear" android:startX="20" android:startY="10" android:endX="100" android:endY="112">
+                    <item android:offset="0" android:color="{TEAL_LIGHT}" />
+                    <item android:offset="1" android:color="{NAVY}" />
+                </gradient>
+            </aapt:attr>
+        </path>
+        <path android:pathData="{R_STEM} {R_BOWL} {R_LEG}" android:strokeColor="#FFFFFF"
+            android:strokeWidth="{STROKE}" android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="{circle}" android:fillColor="{AMBER}" android:strokeColor="#FFFFFF" android:strokeWidth="3" />"""
+
+    head = '<?xml version="1.0" encoding="utf-8"?>\n<!-- Generated by branding/make_logo.py; edit that script instead. -->\n'
+    ns = 'xmlns:android="http://schemas.android.com/apk/res/android"\n    xmlns:aapt="http://schemas.android.com/aapt"'
+
+    # Adaptive launcher icon foreground: the mark inside the 66dp safe zone of the 108dp canvas.
+    icon = f"""{head}<vector {ns}
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:scaleX="0.5" android:scaleY="0.5" android:translateX="24" android:translateY="24">{mark_vector_paths()}
+    </group>
+</vector>
+"""
+    # Full logo for the start screen; the "Rajman" word follows the theme's text colour.
+    full = f"""{head}<vector {ns}
+    android:width="{width * 0.5:.1f}dp" android:height="60dp" android:viewportWidth="{width}" android:viewportHeight="120">{mark_vector_paths()}
+    <path android:fillColor="?attr/colorOnSurface" android:pathData="{rajman}" />
+    <path android:fillColor="{TEAL}" android:pathData="{tech}" />
+</vector>
+"""
+    with open(os.path.join(RES, "ic_launcher_foreground.xml"), "w") as f:
+        f.write(icon)
+    with open(os.path.join(RES, "rajmantech_logo.xml"), "w") as f:
+        f.write(full)
+    print("width", width)
+
+
+if __name__ == "__main__":
+    build()

@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">CameraMapper3D</string>
+    <string name="brand_name">RajmanTech</string>
     <string name="new_scan">New scan</string>
     <string name="no_scans">No scans yet.\nTap “New scan” and slowly walk around the site with the camera pointed at it.</string>
     <string name="detail_label">Detail</string>
