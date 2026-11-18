@@ -3,23 +3,38 @@ package com.cameramapper3d.app
 import android.media.Image
 import com.cameramapper3d.core.DepthFrame
 import com.cameramapper3d.core.Intrinsics
+import com.cameramapper3d.core.IntegrationParams
 import com.google.ar.core.Frame
 import com.google.ar.core.exceptions.NotYetAvailableException
 import java.nio.ByteOrder
 
 /** Copies what fusion needs (depth, confidence, colour, intrinsics, pose) out of an ARCore frame. */
 object ArFrameConverter {
+    private const val MAX_COLOR_LAG_NS = 70_000_000L
 
-    class Captured(val frame: DepthFrame, val depthTimestamp: Long)
+    /**
+     * @param usableFraction share of depth pixels that are in range and (for raw depth) confident
+     *   enough to be fused; near zero means this depth map is useless.
+     */
+    class Captured(val frame: DepthFrame, val depthTimestamp: Long, val usableFraction: Float)
 
     /**
      * @param useRawDepth use ARCore's raw depth with per-pixel confidence (sparser but more accurate)
      *   instead of the smoothed, hole-filled depth.
      * @param lastDepthTimestamp the timestamp of the previously fused depth image, so the same
      *   depth map is never fused twice.
+     * @param poseAt camera pose (column-major camera-to-world) of a recent frame by timestamp.
+     *   Depth can arrive a frame or two after the camera image it was computed from, so it must be
+     *   paired with that image's pose rather than the current one.
      * @return null if no new depth is available for this frame.
      */
-    fun capture(frame: Frame, useRawDepth: Boolean, lastDepthTimestamp: Long): Captured? {
+    fun capture(
+        frame: Frame,
+        useRawDepth: Boolean,
+        lastDepthTimestamp: Long,
+        params: IntegrationParams,
+        poseAt: (Long) -> FloatArray?,
+    ): Captured? {
         val camera = frame.camera
         val depthImage = try {
             if (useRawDepth) frame.acquireRawDepthImage16Bits() else frame.acquireDepthImage16Bits()
@@ -35,8 +50,6 @@ object ArFrameConverter {
         depthImage.use { img ->
             ts = img.timestamp
             if (ts == lastDepthTimestamp) return null
-            // Raw depth is only "new" on frames whose timestamp it shares; only then does the pose match.
-            if (useRawDepth && ts != frame.timestamp) return null
             dw = img.width
             dh = img.height
             depthMm = readDepth(img)
@@ -44,11 +57,29 @@ object ArFrameConverter {
                 try {
                     frame.acquireRawDepthConfidenceImage().use { readY8(it) }
                 } catch (e: NotYetAvailableException) {
-                    return null
+                    null
                 }
             } else {
                 null
             }
+        }
+
+        // Pair the depth with the pose of the camera image it came from. If that frame is no longer
+        // in the history (depth older than ~1 s), skip it rather than fuse it in the wrong place.
+        val pose = if (ts == frame.timestamp) {
+            FloatArray(16).also { camera.pose.toMatrix(it, 0) } // sensor-oriented, matches CPU intrinsics
+        } else {
+            poseAt(ts) ?: return null
+        }
+
+        var usable = 0
+        val minMm = (params.minDepth * 1000).toInt()
+        val maxMm = (params.maxDepth * 1000).toInt()
+        for (i in depthMm.indices) {
+            val d = depthMm[i].toInt() and 0xFFFF
+            if (d < minMm || d > maxMm) continue
+            if (confidence != null && (confidence[i].toInt() and 0xFF) < params.minConfidence) continue
+            usable++
         }
 
         val ii = camera.imageIntrinsics
@@ -59,17 +90,18 @@ object ArFrameConverter {
 
         var rgb: IntArray? = null
         var colorIntr: Intrinsics? = null
-        try {
-            frame.acquireCameraImage().use { img ->
-                rgb = yuvToRgbHalf(img)
-                colorIntr = cpu.scaledTo(img.width / 2, img.height / 2)
+        // Colour comes from the current image; only use it if it is close in time to the depth.
+        if (frame.timestamp - ts < MAX_COLOR_LAG_NS) {
+            try {
+                frame.acquireCameraImage().use { img ->
+                    rgb = yuvToRgbHalf(img)
+                    colorIntr = cpu.scaledTo(img.width / 2, img.height / 2)
+                }
+            } catch (e: NotYetAvailableException) {
+                // Fuse geometry without colour this time.
             }
-        } catch (e: NotYetAvailableException) {
-            // Fuse geometry without colour this time.
         }
 
-        val pose = FloatArray(16)
-        camera.pose.toMatrix(pose, 0) // sensor-oriented camera pose, matches the CPU image intrinsics
         return Captured(
             DepthFrame(
                 depthMm = depthMm,
@@ -80,6 +112,7 @@ object ArFrameConverter {
                 colorIntrinsics = colorIntr,
             ),
             ts,
+            usable.toFloat() / depthMm.size,
         )
     }
 

@@ -17,6 +17,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import com.cameramapper3d.app.databinding.ActivityScanBinding
 import com.cameramapper3d.app.gl.BackgroundRenderer
 import com.cameramapper3d.app.gl.MeshRenderer
@@ -63,6 +64,19 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private var viewportHeight = 0
     private var viewportChanged = false
     private var lastDepthTimestamp = 0L
+
+    // Recent camera poses by timestamp, so late-arriving depth is placed where it was captured.
+    private val poseHistory = ArrayDeque<Pair<Long, FloatArray>>()
+
+    // Depth diagnostics (GL thread), shown in the status line.
+    private var lastUsableFraction = -1f
+    private var lastCaptureError: String? = null
+    private var lastGoodDepthAt = 0L
+    @Volatile private var rawFallbackPending = false
+
+    // User-tunable accuracy settings (remembered between scans).
+    @Volatile private var minConfidencePercent = DEFAULT_CONFIDENCE_PERCENT
+    @Volatile private var maxDepthM = 4f
     private var lastStatusAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -86,6 +100,7 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
         binding.scanButton.setOnClickListener {
             scanning = !scanning
+            lastGoodDepthAt = SystemClock.elapsedRealtime()
             binding.scanButton.setText(if (scanning) R.string.pause else R.string.start)
         }
         binding.resetButton.setOnClickListener {
@@ -93,7 +108,12 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             lastDepthTimestamp = 0L
         }
         binding.finishButton.setOnClickListener { finishScan() }
-        binding.rawDepthSwitch.setOnCheckedChangeListener { _, checked -> useRawDepth = checked }
+        binding.rawDepthSwitch.setOnCheckedChangeListener { _, checked ->
+            useRawDepth = checked
+            lastGoodDepthAt = SystemClock.elapsedRealtime()
+            lastUsableFraction = -1f
+        }
+        setupTuning()
         binding.viewModeButton.setOnClickListener {
             shadeMode = if (shadeMode == ShadeMode.COLOR) ShadeMode.SHADED else ShadeMode.COLOR
             binding.viewModeButton.setText(if (shadeMode == ShadeMode.COLOR) R.string.view_shaded else R.string.view_color)
@@ -248,14 +268,10 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
         val camera = frame.camera
         if (camera.trackingState == TrackingState.TRACKING) {
+            rememberPose(frame.timestamp, camera)
             if (scanning && !finishing && !engine.isBusy) {
-                try {
-                    ArFrameConverter.capture(frame, useRawDepth, lastDepthTimestamp)?.let { captured ->
-                        if (engine.trySubmit(captured.frame, integrationParams())) lastDepthTimestamp = captured.depthTimestamp
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Depth capture failed", e)
-                }
+                captureDepth(frame)
+                checkRawDepthFallback()
             }
             camera.getProjectionMatrix(proj, 0, 0.05f, 100f)
             camera.getViewMatrix(view, 0)
@@ -267,9 +283,78 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     private fun integrationParams() = IntegrationParams(
-        maxDepth = if (voxelSize >= 0.04f) 6f else 4f,
-        minConfidence = 128,
+        maxDepth = maxDepthM,
+        minConfidence = (minConfidencePercent * 255 + 50) / 100,
     )
+
+    private fun setupTuning() {
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        minConfidencePercent = prefs.getInt("min_confidence_pct", DEFAULT_CONFIDENCE_PERCENT).coerceIn(0, 95)
+        maxDepthM = prefs.getFloat("max_depth_m_$voxelSize", if (voxelSize >= 0.04f) 6f else 4f).coerceIn(1f, 8f)
+
+        binding.confidenceSlider.value = (minConfidencePercent / 5 * 5).toFloat()
+        binding.rangeSlider.value = (Math.round(maxDepthM * 2) / 2f)
+        binding.confidenceLabel.text = getString(R.string.confidence_value, minConfidencePercent)
+        binding.rangeLabel.text = getString(R.string.range_value, maxDepthM)
+
+        binding.confidenceSlider.addOnChangeListener { _, value, _ ->
+            minConfidencePercent = value.toInt()
+            binding.confidenceLabel.text = getString(R.string.confidence_value, minConfidencePercent)
+            prefs.edit { putInt("min_confidence_pct", minConfidencePercent) }
+            lastGoodDepthAt = SystemClock.elapsedRealtime() // give the new setting a chance
+        }
+        binding.rangeSlider.addOnChangeListener { _, value, _ ->
+            maxDepthM = value
+            binding.rangeLabel.text = getString(R.string.range_value, maxDepthM)
+            prefs.edit { putFloat("max_depth_m_$voxelSize", maxDepthM) }
+        }
+        binding.tuneButton.setOnClickListener {
+            binding.tunePanel.visibility = if (binding.tunePanel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+    }
+
+    private fun rememberPose(timestamp: Long, camera: Camera) {
+        val m = FloatArray(16)
+        camera.pose.toMatrix(m, 0)
+        poseHistory.addLast(timestamp to m)
+        while (poseHistory.size > POSE_HISTORY) poseHistory.removeFirst()
+    }
+
+    private fun poseAt(timestamp: Long): FloatArray? = poseHistory.lastOrNull { it.first == timestamp }?.second
+
+    private fun captureDepth(frame: com.google.ar.core.Frame) {
+        val params = integrationParams()
+        try {
+            val captured = ArFrameConverter.capture(frame, useRawDepth, lastDepthTimestamp, params, ::poseAt) ?: return
+            lastDepthTimestamp = captured.depthTimestamp
+            lastUsableFraction = captured.usableFraction
+            lastCaptureError = null
+            if (captured.usableFraction < MIN_USABLE_FRACTION) return
+            if (engine.trySubmit(captured.frame, params)) lastGoodDepthAt = SystemClock.elapsedRealtime()
+        } catch (e: Exception) {
+            Log.w(TAG, "Depth capture failed", e)
+            lastCaptureError = e.javaClass.simpleName + (e.message?.let { ": $it" } ?: "")
+        }
+    }
+
+    /** If accurate (raw) depth yields nothing usable for a while, switch to smoothed depth. */
+    private fun checkRawDepthFallback() {
+        if (!useRawDepth || rawFallbackPending) return
+        if (SystemClock.elapsedRealtime() - lastGoodDepthAt < RAW_FALLBACK_MS) return
+        rawFallbackPending = true
+        useRawDepth = false
+        runOnUiThread {
+            binding.rawDepthSwitch.isChecked = false
+            rawFallbackPending = false
+            Toast.makeText(this, R.string.raw_depth_fallback, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun depthStatus(): String = when {
+        lastCaptureError != null -> "Depth error: $lastCaptureError"
+        lastUsableFraction < 0f -> "Waiting for depth…"
+        else -> "${if (useRawDepth) "Accurate" else "Smoothed"} depth: ${(lastUsableFraction * 100).toInt()}% usable"
+    }
 
     private fun updateStatus(camera: Camera) {
         val now = SystemClock.elapsedRealtime()
@@ -290,6 +375,7 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             else -> {
                 val state = if (scanning) "Scanning" else "Paused"
                 "$state · ${stats.frames} frames · ${formatCount(meshRenderer.triangleCount)} triangles\n" +
+                    depthStatus() + "\n" +
                     "Voxel ${(voxelSize * 100).let { if (it % 1f == 0f) it.toInt().toString() else it.toString() }} cm · " +
                     "fuse ${stats.fuseMs} ms · mesh ${stats.meshMs} ms"
             }
@@ -312,6 +398,11 @@ class ScanActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         const val EXTRA_VOXEL_SIZE = "voxel_size"
         private const val REQUEST_CAMERA = 1
         private const val TAG = "ScanActivity"
+        private const val POSE_HISTORY = 60
+        /** ~70/255: phones without a ToF sensor report mostly mid-range confidence. */
+        private const val DEFAULT_CONFIDENCE_PERCENT = 25
+        private const val MIN_USABLE_FRACTION = 0.01f
+        private const val RAW_FALLBACK_MS = 5_000L
 
         private fun normalize(v: FloatArray): FloatArray {
             val l = sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])

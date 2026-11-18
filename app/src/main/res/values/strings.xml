@@ -10,6 +10,13 @@
     <string name="view_color">Colour</string>
     <string name="view_shaded">Shaded</string>
     <string name="raw_depth">Accurate depth</string>
+    <string name="tune">Tune</string>
+    <string name="confidence_title">Depth filter</string>
+    <string name="confidence_value">Depth filter: %1$d%% (higher = cleaner but more holes)</string>
+    <string name="range_title">Max distance</string>
+    <string name="range_value">Max distance: %1$.1f m (shorter = more accurate)</string>
+    <string name="tune_help">The depth filter only applies with Accurate depth on. If the mesh stays empty, lower it. If the mesh is noisy or bumpy, raise it.</string>
+    <string name="raw_depth_fallback">Accurate depth isn’t giving usable data on this phone, so it was switched off. Scanning continues with smoothed depth.</string>
     <string name="camera_permission_needed">Camera permission is needed to scan.</string>
     <string name="depth_not_supported">This phone does not support the ARCore Depth API, which is required for 3D scanning.</string>
     <string name="arcore_failed">ARCore could not start: %1$s</string>
