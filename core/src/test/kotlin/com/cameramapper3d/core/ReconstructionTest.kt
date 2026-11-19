@@ -224,6 +224,31 @@ class ReconstructionTest {
         assertEquals(7, lines.first { it.startsWith("v ") }.split(' ').size)
     }
 
+    @Test
+    fun thumbnailShowsTheScan() {
+        val bg = 0xFF1C1F24.toInt()
+        val empty = ThumbnailRenderer.render(MeshData.EMPTY, size = 32, background = bg)
+        assertEquals(32 * 32, empty.size)
+        assertTrue(empty.all { it == bg })
+
+        val mesh = SurfaceNetsMesher().meshAll(scan(0.04f))
+        val size = 128
+        val img = ThumbnailRenderer.render(mesh, size = size, background = bg)
+        assertEquals(size * size, img.size)
+        fun rgb(x: Int, y: Int) = img[y * size + x].let { Triple((it shr 16) and 0xFF, (it shr 8) and 0xFF, it and 0xFF) }
+        // The green sphere is in the middle, in front of the red wall.
+        val (r, g, _) = rgb(size / 2, size / 2)
+        assertTrue(g > r + 40, "centre should be the green sphere, was r=$r g=$g")
+        val covered = img.count { it != bg }
+        assertTrue(covered > size * size / 4, "the scan should fill a good part of the thumbnail ($covered px)")
+        assertTrue(img.any { val c = it; ((c shr 16) and 0xFF) > ((c shr 8) and 0xFF) + 60 }, "red wall should be visible")
+
+        // Save it so a person can look at it: core/build/thumbnail-test.png
+        val out = java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        out.setRGB(0, 0, size, size, img, 0, size)
+        javax.imageio.ImageIO.write(out, "png", java.io.File("build/thumbnail-test.png"))
+    }
+
     private fun vec(a: FloatArray, i: Int) = floatArrayOf(a[i * 3], a[i * 3 + 1], a[i * 3 + 2])
     private fun sub(a: FloatArray, b: FloatArray) = floatArrayOf(a[0] - b[0], a[1] - b[1], a[2] - b[2])
     private fun dot(a: FloatArray, b: FloatArray) = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]

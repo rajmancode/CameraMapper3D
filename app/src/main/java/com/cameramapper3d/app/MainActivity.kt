@@ -2,12 +2,16 @@ package com.cameramapper3d.app
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.text.format.Formatter
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.util.LruCache
 import android.widget.ArrayAdapter
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
@@ -15,13 +19,19 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.cameramapper3d.app.databinding.ActivityMainBinding
 import java.io.File
+import java.util.concurrent.Executors
 
 /** Lists saved scans and starts new ones. */
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
-    private val adapter = ScanAdapter { file ->
-        startActivity(Intent(this, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, file.absolutePath))
-    }
+    private val thumbnailWorker = Executors.newSingleThreadExecutor()
+    private val thumbnails = LruCache<String, Bitmap>(64)
+    private val adapter = ScanAdapter(
+        onClick = { file ->
+            startActivity(Intent(this, ViewerActivity::class.java).putExtra(ViewerActivity.EXTRA_PATH, file.absolutePath))
+        },
+        loadThumbnail = ::loadThumbnail,
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,9 +65,37 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        refreshList()
+    }
+
+    override fun onDestroy() {
+        thumbnailWorker.shutdownNow()
+        super.onDestroy()
+    }
+
+    private fun refreshList() {
         val scans = ScanStore.list(this)
         adapter.submit(scans)
         binding.emptyText.visibility = if (scans.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    /** Shows the scan's thumbnail in [view], rendering it in the background if it doesn't exist yet. */
+    private fun loadThumbnail(scan: File, view: ImageView) {
+        view.tag = scan.path
+        val cached = thumbnails.get(scan.path)
+        if (cached != null) { view.setImageBitmap(cached); return }
+        view.setImageDrawable(null)
+        thumbnailWorker.execute {
+            val bitmap = try {
+                BitmapFactory.decodeFile(ScanStore.ensureThumbnail(scan).path)
+            } catch (e: Exception) {
+                null
+            } ?: return@execute
+            runOnUiThread {
+                thumbnails.put(scan.path, bitmap)
+                if (view.tag == scan.path) view.setImageBitmap(bitmap)
+            }
+        }
     }
 
     data class DetailLevel(val label: String, val voxelSize: Float)
@@ -70,10 +108,14 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private class ScanAdapter(private val onClick: (File) -> Unit) : RecyclerView.Adapter<ScanAdapter.Holder>() {
+    private class ScanAdapter(
+        private val onClick: (File) -> Unit,
+        private val loadThumbnail: (File, ImageView) -> Unit,
+    ) : RecyclerView.Adapter<ScanAdapter.Holder>() {
         private var items: List<File> = emptyList()
 
         class Holder(view: View) : RecyclerView.ViewHolder(view) {
+            val thumbnail: ImageView = view.findViewById(R.id.thumbnail)
             val title: TextView = view.findViewById(R.id.title)
             val subtitle: TextView = view.findViewById(R.id.subtitle)
         }
@@ -94,6 +136,7 @@ class MainActivity : AppCompatActivity() {
             holder.title.text = ScanStore.displayName(f)
             holder.subtitle.text = Formatter.formatShortFileSize(holder.itemView.context, f.length())
             holder.itemView.setOnClickListener { onClick(f) }
+            loadThumbnail(f, holder.thumbnail)
         }
     }
 }

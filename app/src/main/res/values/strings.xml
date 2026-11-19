@@ -31,6 +31,9 @@
     <string name="measure_hint">Tap two points on the model to measure.</string>
     <string name="clear_measure">Clear</string>
     <string name="delete">Delete</string>
+    <string name="rename">Rename</string>
+    <string name="rename_title">Rename scan</string>
+    <string name="scan_name">Name</string>
     <string name="delete_confirm">Delete this scan?</string>
     <string name="cancel">Cancel</string>
     <string name="load_failed">Could not open the scan: %1$s</string>

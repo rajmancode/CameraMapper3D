@@ -30,7 +30,7 @@ import kotlin.math.sqrt
 /** Orbit viewer for a saved scan, with tap-to-measure and export. */
 class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private lateinit var binding: ActivityViewerBinding
-    private lateinit var file: File
+    private lateinit var file: File // changes when the scan is renamed
     private val worker = Executors.newSingleThreadExecutor()
     private val camera = OrbitCamera()
     private val meshRenderer = MeshRenderer()
@@ -120,11 +120,18 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
         android.R.id.home -> { finish(); true }
+        R.id.action_rename -> {
+            RenameDialog.show(this, file) { renamed ->
+                file = renamed
+                title = ScanStore.displayName(renamed)
+            }
+            true
+        }
         R.id.action_delete -> {
             MaterialAlertDialogBuilder(this)
                 .setMessage(R.string.delete_confirm)
                 .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.delete) { _, _ -> file.delete(); finish() }
+                .setPositiveButton(R.string.delete) { _, _ -> ScanStore.delete(file); finish() }
                 .show()
             true
         }
