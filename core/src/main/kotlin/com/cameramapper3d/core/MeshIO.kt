@@ -2,9 +2,6 @@ package com.cameramapper3d.core
 
 import java.io.BufferedOutputStream
 import java.io.BufferedWriter
-import java.io.DataInputStream
-import java.io.IOException
-import java.io.InputStream
 import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.nio.ByteBuffer
@@ -49,86 +46,6 @@ object PlyWriter {
             bos.write(fbuf.array(), 0, 13)
         }
         bos.flush()
-    }
-}
-
-/** Reads the binary PLY files produced by [PlyWriter]. */
-object PlyReader {
-    fun read(input: InputStream): MeshData {
-        val din = DataInputStream(input.buffered(1 shl 16))
-        val headerLines = ArrayList<String>()
-        while (true) {
-            val line = readAsciiLine(din) ?: throw IOException("Unexpected end of PLY header")
-            headerLines += line.trim()
-            if (line.trim() == "end_header") break
-            if (headerLines.size > 200) throw IOException("PLY header too long")
-        }
-        if (headerLines.firstOrNull() != "ply") throw IOException("Not a PLY file")
-        if (headerLines.none { it == "format binary_little_endian 1.0" }) {
-            throw IOException("Only binary little-endian PLY files are supported")
-        }
-        var vertexCount = -1
-        var faceCount = -1
-        val vertexProps = ArrayList<String>()
-        var current = ""
-        for (l in headerLines) {
-            val parts = l.split(' ').filter { it.isNotEmpty() }
-            when {
-                parts.size == 3 && parts[0] == "element" -> {
-                    current = parts[1]
-                    if (current == "vertex") vertexCount = parts[2].toInt()
-                    if (current == "face") faceCount = parts[2].toInt()
-                }
-                parts.isNotEmpty() && parts[0] == "property" && current == "vertex" -> vertexProps += l
-            }
-        }
-        val expected = listOf(
-            "property float x", "property float y", "property float z",
-            "property float nx", "property float ny", "property float nz",
-            "property uchar red", "property uchar green", "property uchar blue",
-        )
-        if (vertexProps != expected || vertexCount < 0 || faceCount < 0) {
-            throw IOException("Unsupported PLY layout (expected a ScanMesh export)")
-        }
-
-        val pos = FloatArray(vertexCount * 3)
-        val nrm = FloatArray(vertexCount * 3)
-        val col = ByteArray(vertexCount * 3)
-        val vb = ByteArray(27)
-        val bb = ByteBuffer.wrap(vb).order(ByteOrder.LITTLE_ENDIAN)
-        for (i in 0 until vertexCount) {
-            din.readFully(vb)
-            bb.clear()
-            for (a in 0 until 3) pos[i * 3 + a] = bb.getFloat()
-            for (a in 0 until 3) nrm[i * 3 + a] = bb.getFloat()
-            for (a in 0 until 3) col[i * 3 + a] = bb.get()
-        }
-        val idx = IntArray(faceCount * 3)
-        val fb = ByteArray(12)
-        val fbb = ByteBuffer.wrap(fb).order(ByteOrder.LITTLE_ENDIAN)
-        for (t in 0 until faceCount) {
-            val n = din.readUnsignedByte()
-            if (n != 3) throw IOException("Only triangle faces are supported")
-            din.readFully(fb)
-            fbb.clear()
-            for (a in 0 until 3) {
-                val v = fbb.getInt()
-                if (v < 0 || v >= vertexCount) throw IOException("Face index out of range")
-                idx[t * 3 + a] = v
-            }
-        }
-        return MeshData(pos, nrm, col, idx)
-    }
-
-    private fun readAsciiLine(din: DataInputStream): String? {
-        val sb = StringBuilder()
-        while (true) {
-            val b = din.read()
-            if (b < 0) return if (sb.isEmpty()) null else sb.toString()
-            if (b == '\n'.code) return sb.toString()
-            if (b != '\r'.code) sb.append(b.toChar())
-            if (sb.length > 1024) throw IOException("PLY header line too long")
-        }
     }
 }
 

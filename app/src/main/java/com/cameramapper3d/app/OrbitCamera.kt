@@ -73,6 +73,17 @@ class OrbitCamera {
         return floatArrayOf(near[0], near[1], near[2], far[0] - near[0], far[1] - near[1], far[2] - near[2])
     }
 
+    /** Screen pixel (x, y) where a world point appears, or null if it is behind the camera. */
+    fun project(x: Float, y: Float, z: Float): FloatArray? {
+        val vp = FloatArray(16)
+        val w: Int; val h: Int
+        synchronized(this) { viewProjection(vp); w = width; h = height }
+        val c = FloatArray(4)
+        Matrix.multiplyMV(c, 0, vp, 0, floatArrayOf(x, y, z, 1f), 0)
+        if (c[3] <= 1e-6f) return null
+        return floatArrayOf((c[0] / c[3] + 1f) / 2f * w, (1f - c[1] / c[3]) / 2f * h)
+    }
+
     private fun unproject(inv: FloatArray, x: Float, y: Float, z: Float): FloatArray {
         val out = FloatArray(4)
         Matrix.multiplyMV(out, 0, inv, 0, floatArrayOf(x, y, z, 1f), 0)

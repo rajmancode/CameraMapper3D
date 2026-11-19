@@ -14,11 +14,13 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
 import com.cameramapper3d.app.databinding.ActivityViewerBinding
 import com.cameramapper3d.app.databinding.DialogOptimiseBinding
+import com.cameramapper3d.app.databinding.DialogSnapBinding
 import com.cameramapper3d.app.gl.MarkerRenderer
 import com.cameramapper3d.app.gl.MeshRenderer
 import com.cameramapper3d.app.gl.ShadeMode
@@ -28,6 +30,7 @@ import com.cameramapper3d.core.Ruler
 import com.cameramapper3d.core.MeshCleaner
 import com.cameramapper3d.core.SurfaceSelector
 import com.cameramapper3d.core.WallStraightener
+import com.google.android.material.chip.Chip
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.util.Locale
@@ -35,6 +38,8 @@ import java.util.concurrent.Executors
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.abs
+import kotlin.math.hypot
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /** Orbit viewer for a saved scan, with tap-to-measure and export. */
@@ -59,6 +64,10 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     @Volatile private var markers = FloatArray(0)
     @Volatile private var rulerTicks = FloatArray(0)
     @Volatile private var rulerMode = Ruler.Mode.FREE
+    /** Angle step for the snapping ruler, degrees (user-adjustable). */
+    @Volatile private var snapDegrees = 15.0
+    /** Set when the snap button has just been selected, so that only a second tap opens the step picker. */
+    private var snapJustSelected = false
     /** Direction along the scan's main wall, 0° for the 15° ruler; null if no wall was found. */
     @Volatile private var wallHeading: Double? = null
     private var pointSizePx = 30f
@@ -97,10 +106,21 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                 R.id.rulerSnap -> Ruler.Mode.SNAP
                 else -> Ruler.Mode.FREE
             }
+            if (id == R.id.rulerSnap) {
+                snapJustSelected = true
+                Toast.makeText(this, getString(R.string.snap_hint, formatDegrees(snapDegrees)), Toast.LENGTH_SHORT).show()
+            }
             updateMeasurement()
         }
-        binding.plyButton.setOnClickListener { share(ScanStore.Format.PLY) }
-        binding.objButton.setOnClickListener { share(ScanStore.Format.OBJ) }
+        snapDegrees = getSharedPreferences("settings", MODE_PRIVATE).getFloat("snap_degrees", 15f).toDouble().coerceIn(1.0, 90.0)
+        binding.rulerSnap.text = formatDegrees(snapDegrees)
+        // A tap on the already-selected angle button (or a long press) opens the angle-step picker.
+        binding.rulerSnap.setOnClickListener {
+            if (snapJustSelected) snapJustSelected = false else showSnapDialog()
+        }
+        binding.rulerSnap.setOnLongClickListener { binding.rulerGroup.check(R.id.rulerSnap); snapJustSelected = false; showSnapDialog(); true }
+        binding.plyButton.setOnClickListener { showExportChoice(ScanStore.Format.PLY) }
+        binding.objButton.setOnClickListener { showExportChoice(ScanStore.Format.OBJ) }
         binding.selectCancelButton.setOnClickListener { exitSelectMode() }
         binding.selectUndoButton.setOnClickListener {
             if (selections.isNotEmpty()) selections.removeAt(selections.size - 1)
@@ -426,6 +446,79 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         binding.objButton.isEnabled = enabled
     }
 
+    // --- Export: share with another app, or save a file to the device ---
+
+    private val savePly = registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+        if (uri != null) saveExport(ScanStore.Format.PLY, uri)
+    }
+    private val saveObj = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        if (uri != null) saveExport(ScanStore.Format.OBJ, uri)
+    }
+
+    private fun showExportChoice(format: ScanStore.Format) {
+        val name = format.extension.uppercase(Locale.ROOT)
+        MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.export_title, name))
+            .setItems(arrayOf(getString(R.string.export_share), getString(R.string.export_save))) { _, which ->
+                if (which == 0) {
+                    share(format)
+                } else {
+                    val suggested = "${ScanStore.displayName(file)}.${format.extension}"
+                    if (format == ScanStore.Format.PLY) savePly.launch(suggested) else saveObj.launch(suggested)
+                }
+            }
+            .show()
+    }
+
+    private fun saveExport(format: ScanStore.Format, uri: android.net.Uri) {
+        val m = mesh ?: return
+        val scan = file
+        setExportEnabled(false)
+        worker.execute {
+            val message = try {
+                contentResolver.openOutputStream(uri, "wt")?.use { ScanStore.writeExport(scan, m, format, it) }
+                    ?: throw java.io.IOException("the file could not be created")
+                getString(R.string.export_saved, "${ScanStore.displayName(scan)}.${format.extension}")
+            } catch (e: Exception) {
+                getString(R.string.export_failed, e.message ?: e.javaClass.simpleName)
+            }
+            runOnUiThread {
+                setExportEnabled(true)
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    // --- Snapping ruler: angle step ---
+
+    private fun formatDegrees(d: Double): String =
+        if (d % 1.0 == 0.0) "${d.toInt()}°" else String.format(Locale.getDefault(), "%.1f°", d)
+
+    private fun showSnapDialog() {
+        val c = DialogSnapBinding.inflate(layoutInflater)
+        c.snapSlider.value = (Math.round(snapDegrees * 2) / 2.0).toFloat().coerceIn(1f, 90f)
+        fun label() { c.snapLabel.text = getString(R.string.snap_value, formatDegrees(c.snapSlider.value.toDouble())) }
+        label()
+        c.snapSlider.addOnChangeListener { _, _, _ -> label() }
+        for (preset in listOf(5.0, 10.0, 15.0, 22.5, 30.0, 45.0, 90.0)) {
+            c.snapPresets.addView(Chip(this).apply {
+                text = formatDegrees(preset)
+                setOnClickListener { c.snapSlider.value = preset.toFloat() }
+            })
+        }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.snap_title)
+            .setView(c.root)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.ok) { _, _ ->
+                snapDegrees = c.snapSlider.value.toDouble()
+                getSharedPreferences("settings", MODE_PRIVATE).edit { putFloat("snap_degrees", snapDegrees.toFloat()) }
+                binding.rulerSnap.text = formatDegrees(snapDegrees)
+                updateMeasurement()
+            }
+            .show()
+    }
+
     private fun share(format: ScanStore.Format) {
         val m = mesh ?: return
         setExportEnabled(false)
@@ -474,7 +567,7 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val p = tapped
         when (p.size) {
             6 -> {
-                val m = Ruler.measure(p.copyOfRange(0, 3), p.copyOfRange(3, 6), rulerMode, wallHeading ?: 0.0)
+                val m = Ruler.measure(p.copyOfRange(0, 3), p.copyOfRange(3, 6), rulerMode, wallHeading ?: 0.0, snapDegrees)
                 markers = m.start + m.end
                 rulerTicks = Ruler.ticks(m)
                 binding.measureText.text = describe(m)
@@ -540,10 +633,79 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             }
         })
         binding.surfaceView.setOnTouchListener { _, event ->
+            if (!selecting && dragRuler(event)) return@setOnTouchListener true
             scale.onTouchEvent(event)
             gestures.onTouchEvent(event)
             true
         }
+    }
+
+    // --- Dragging the ruler: an end moves that end, the middle slides the whole ruler ---
+
+    private enum class Drag { NONE, START, END, WHOLE }
+    private var drag = Drag.NONE
+    private var dragLastHit: FloatArray? = null
+
+    /** Returns true when the touch belongs to a ruler drag (so it must not rotate the view). */
+    private fun dragRuler(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                drag = Drag.NONE
+                val pts = markers
+                if (tapped.size != 6 || pts.size != 6) return false
+                val a = camera.project(pts[0], pts[1], pts[2]) ?: return false
+                val b = camera.project(pts[3], pts[4], pts[5]) ?: return false
+                val density = resources.displayMetrics.density
+                val da = hypot(e.x - a[0], e.y - a[1]); val db = hypot(e.x - b[0], e.y - b[1])
+                drag = when {
+                    min(da, db) < 36 * density -> if (da <= db) Drag.START else Drag.END
+                    distanceToSegment(e.x, e.y, a, b) < 24 * density -> Drag.WHOLE
+                    else -> Drag.NONE
+                }
+                if (drag == Drag.WHOLE) {
+                    dragLastHit = hitAt(e.x, e.y)
+                    if (dragLastHit == null) drag = Drag.NONE
+                }
+                return drag != Drag.NONE
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (drag == Drag.NONE) return false
+                val hit = hitAt(e.x, e.y) ?: return true // finger is off the model: keep the ruler where it is
+                val p = tapped.copyOf()
+                when (drag) {
+                    Drag.START -> hit.copyInto(p, 0)
+                    Drag.END -> hit.copyInto(p, 3)
+                    else -> {
+                        val last = dragLastHit ?: return true
+                        for (k in 0 until 6) p[k] += hit[k % 3] - last[k % 3]
+                        dragLastHit = hit
+                    }
+                }
+                tapped = p
+                updateMeasurement()
+                return true
+            }
+            MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val wasDragging = drag != Drag.NONE
+                drag = Drag.NONE
+                return wasDragging
+            }
+        }
+        return drag != Drag.NONE
+    }
+
+    private fun hitAt(x: Float, y: Float): FloatArray? {
+        val rc = raycaster ?: return null
+        val r = camera.rayThrough(x, y)
+        val hit = rc.cast(r[0], r[1], r[2], r[3], r[4], r[5]) ?: return null
+        return floatArrayOf(hit.x, hit.y, hit.z)
+    }
+
+    private fun distanceToSegment(x: Float, y: Float, a: FloatArray, b: FloatArray): Float {
+        val dx = b[0] - a[0]; val dy = b[1] - a[1]
+        val len2 = dx * dx + dy * dy
+        val t = if (len2 < 1e-6f) 0f else (((x - a[0]) * dx + (y - a[1]) * dy) / len2).coerceIn(0f, 1f)
+        return hypot(x - (a[0] + t * dx), y - (a[1] + t * dy))
     }
 
     // --- GLSurfaceView.Renderer ---

@@ -4,7 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.text.format.Formatter
 import android.view.LayoutInflater
 import android.view.View
@@ -12,6 +14,8 @@ import android.view.ViewGroup
 import android.util.LruCache
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -31,6 +35,11 @@ class MainActivity : AppCompatActivity() {
         },
         loadThumbnail = ::loadThumbnail,
     )
+
+    /** Lets the user pick a PLY or OBJ file (from Downloads, Drive, another app…) to import. */
+    private val importPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importScan(uri)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +65,9 @@ class MainActivity : AppCompatActivity() {
             prefs.edit { putInt("detail", position) }
         }
 
+        // PLY and OBJ have no standard MIME type, so offer every file; the importer checks the contents.
+        binding.importButton.setOnClickListener { importPicker.launch(arrayOf("*/*")) }
+
         binding.newScanButton.setOnClickListener {
             startActivity(
                 Intent(this, ScanActivity::class.java)
@@ -78,6 +90,39 @@ class MainActivity : AppCompatActivity() {
         val scans = ScanStore.list(this)
         adapter.submit(scans)
         binding.emptyText.visibility = if (scans.isEmpty()) View.VISIBLE else View.GONE
+    }
+
+    private fun importScan(uri: Uri) {
+        binding.importButton.isEnabled = false
+        binding.importButton.setText(R.string.importing)
+        val name = displayNameOf(uri)?.substringBeforeLast('.') ?: getString(R.string.import_scan)
+        thumbnailWorker.execute {
+            val result = try {
+                val mesh = contentResolver.openInputStream(uri)?.use { ScanStore.import(it) }
+                    ?: throw java.io.IOException("the file could not be opened")
+                val saved = ScanStore.saveNamed(this, mesh, name)
+                ScanStore.ensureThumbnail(saved)
+                getString(R.string.import_done, ScanStore.displayName(saved))
+            } catch (e: Exception) {
+                getString(R.string.import_failed, e.message ?: e.javaClass.simpleName)
+            } catch (e: OutOfMemoryError) {
+                getString(R.string.import_failed, "the file is too large for this phone")
+            }
+            runOnUiThread {
+                binding.importButton.isEnabled = true
+                binding.importButton.setText(R.string.import_scan)
+                Toast.makeText(this, result, Toast.LENGTH_LONG).show()
+                refreshList()
+            }
+        }
+    }
+
+    private fun displayNameOf(uri: Uri): String? = try {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    } catch (e: Exception) {
+        null
     }
 
     /** Shows the scan's thumbnail in [view], rendering it in the background if it doesn't exist yet. */

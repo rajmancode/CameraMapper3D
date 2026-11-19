@@ -5,11 +5,14 @@ import android.content.Intent
 import android.graphics.Bitmap
 import androidx.core.content.FileProvider
 import com.cameramapper3d.core.MeshData
+import com.cameramapper3d.core.MeshImporter
 import com.cameramapper3d.core.ObjWriter
 import com.cameramapper3d.core.PlyReader
 import com.cameramapper3d.core.PlyWriter
 import com.cameramapper3d.core.ThumbnailRenderer
 import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -35,9 +38,13 @@ object ScanStore {
     }
 
     /** Saves a processed version of [source] as a new scan named "<source name> <suffix>". */
-    fun saveDerived(context: Context, mesh: MeshData, source: File, suffix: String): File {
+    fun saveDerived(context: Context, mesh: MeshData, source: File, suffix: String): File =
+        saveNamed(context, mesh, "${displayName(source)} $suffix")
+
+    /** Saves [mesh] as a new scan called [baseName] (or "baseName 2", "baseName 3"… if taken). */
+    fun saveNamed(context: Context, mesh: MeshData, baseName: String): File {
         val file = save(context, mesh, voxelSize = 0f)
-        val base = "${displayName(source)} $suffix"
+        val base = baseName.ifBlank { "Imported scan" }
         var n = 1
         while (true) {
             val name = if (n == 1) base else "$base $n"
@@ -50,6 +57,18 @@ object ScanStore {
     }
 
     fun load(file: File): MeshData = file.inputStream().use { PlyReader.read(it) }
+
+    /** Reads a PLY or OBJ file from another app or scanner. */
+    fun import(input: InputStream): MeshData = MeshImporter.read(input)
+
+    /** Writes the scan in [format] to [out] (e.g. a file the user picked with "Save to device"). */
+    fun writeExport(scan: File, mesh: MeshData, format: Format, out: OutputStream) {
+        when (format) {
+            Format.PLY -> scan.inputStream().use { it.copyTo(out, 1 shl 16) }
+            Format.OBJ -> ObjWriter.write(mesh, out)
+        }
+        out.flush()
+    }
 
     fun thumbnailFile(scan: File) = File(scan.parentFile, scan.nameWithoutExtension + ".png")
 

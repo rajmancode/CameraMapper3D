@@ -47,6 +47,18 @@ class RulerTest {
     }
 
     @Test
+    fun snapStepIsAdjustable() {
+        val h = Math.toRadians(52.0); val len = 3.0
+        val end = floatArrayOf((a[0] + len * Math.cos(h)).toFloat(), a[1], (a[2] + len * Math.sin(h)).toFloat())
+        assertEquals(50f, Ruler.measure(a, end, Ruler.Mode.SNAP, snapDegrees = 10.0).headingDegrees, 1e-3f)
+        assertEquals(45f, Ruler.measure(a, end, Ruler.Mode.SNAP, snapDegrees = 45.0).headingDegrees, 1e-3f)
+        assertEquals(90f, Ruler.measure(a, end, Ruler.Mode.SNAP, snapDegrees = 90.0).headingDegrees, 1e-3f)
+        assertEquals(52f, Ruler.measure(a, end, Ruler.Mode.SNAP, snapDegrees = 1.0).headingDegrees, 1e-3f)
+        assertEquals(0f, Ruler.measure(a, end, Ruler.Mode.SNAP, snapDegrees = 22.5).elevationDegrees, 1e-3f)
+        assertEquals(45f, Ruler.measure(a, end, Ruler.Mode.SNAP, snapDegrees = 22.5).headingDegrees, 1e-3f)
+    }
+
+    @Test
     fun ticksFollowTheRuler() {
         val m = Ruler.measure(a, b, Ruler.Mode.LEVEL) // 5 m → 10 cm ticks
         val t = Ruler.ticks(m)

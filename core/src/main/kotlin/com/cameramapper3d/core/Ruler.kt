@@ -22,7 +22,7 @@ object Ruler {
         LEVEL,
         /** Height difference only: the end is moved straight above/below the start. */
         VERTICAL,
-        /** The direction is rounded to the nearest [Measurement.SNAP_DEGREES] up/down and around the room. */
+        /** The direction is rounded to the nearest multiple of the snap step, up/down and around the room. */
         SNAP,
     }
 
@@ -38,23 +38,27 @@ object Ruler {
     ) {
         val horizontal: Float get() = sqrt((end[0] - start[0]).sq() + (end[2] - start[2]).sq())
         val vertical: Float get() = abs(end[1] - start[1])
-
-        companion object {
-            const val SNAP_DEGREES = 15.0
-        }
     }
 
     /**
      * @param a first tapped point, [b] second tapped point (xyz).
      * @param referenceHeading direction (radians, in the horizontal plane, from +X towards +Z) that
      *   counts as 0° around the room, e.g. along the main wall.
+     * @param snapDegrees angle step for [Mode.SNAP], e.g. 15 for 0°, 15°, 30°…
      */
-    fun measure(a: FloatArray, b: FloatArray, mode: Mode, referenceHeading: Double = 0.0): Measurement {
+    fun measure(
+        a: FloatArray,
+        b: FloatArray,
+        mode: Mode,
+        referenceHeading: Double = 0.0,
+        snapDegrees: Double = 15.0,
+    ): Measurement {
+        require(snapDegrees > 0.0 && snapDegrees <= 90.0) { "snap step must be in (0, 90] degrees" }
         val end = when (mode) {
             Mode.FREE -> b.copyOf()
             Mode.LEVEL -> floatArrayOf(b[0], a[1], b[2])
             Mode.VERTICAL -> floatArrayOf(a[0], b[1], a[2])
-            Mode.SNAP -> snap(a, b, referenceHeading)
+            Mode.SNAP -> snap(a, b, referenceHeading, snapDegrees)
         }
         val dx = end[0] - a[0]; val dy = end[1] - a[1]; val dz = end[2] - a[2]
         val len = sqrt(dx * dx + dy * dy + dz * dz)
@@ -66,11 +70,11 @@ object Ruler {
         return Measurement(a.copyOf(), end, len, elevation.toFloat(), heading.toFloat())
     }
 
-    private fun snap(a: FloatArray, b: FloatArray, ref: Double): FloatArray {
+    private fun snap(a: FloatArray, b: FloatArray, ref: Double, stepDegrees: Double): FloatArray {
         val dx = (b[0] - a[0]).toDouble(); val dy = (b[1] - a[1]).toDouble(); val dz = (b[2] - a[2]).toDouble()
         val len = sqrt(dx * dx + dy * dy + dz * dz)
         if (len < 1e-9) return b.copyOf()
-        val step = Math.toRadians(Measurement.SNAP_DEGREES)
+        val step = Math.toRadians(stepDegrees)
         val elevation = round(asin((dy / len).coerceIn(-1.0, 1.0)) / step) * step
         val heading = round((atan2(dz, dx) - ref) / step) * step + ref
         val ux = cos(elevation) * cos(heading); val uy = sin(elevation); val uz = cos(elevation) * sin(heading)
