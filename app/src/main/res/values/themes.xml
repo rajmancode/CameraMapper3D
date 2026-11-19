@@ -1,11 +1,11 @@
 <resources>
-    <style name="Theme.CameraMapper3D" parent="Theme.Material3.DayNight.NoActionBar">
+    <style name="Theme.ScanMesh" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">#2E7D6B</item>
         <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorSecondary">#F2A541</item>
     </style>
 
-    <style name="Theme.CameraMapper3D.Fullscreen">
+    <style name="Theme.ScanMesh.Fullscreen">
         <item name="android:windowBackground">@android:color/black</item>
     </style>
 

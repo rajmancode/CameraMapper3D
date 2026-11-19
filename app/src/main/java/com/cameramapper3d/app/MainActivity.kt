@@ -29,6 +29,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
         Insets.applyBars(top = binding.toolbar, bottom = binding.bottomBar)
 
+        val version = try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { null }
+        binding.appTitle.text = if (version != null) getString(R.string.app_title_version, version) else getString(R.string.app_name)
+
         binding.scanList.layoutManager = LinearLayoutManager(this)
         binding.scanList.adapter = adapter
 

@@ -1,4 +1,6 @@
-# CameraMapper3D
+# ScanMesh
+
+*by RajmanTech*
 
 An Android app that turns the phone camera into a 3D scanner for a site. You walk around and the
 app builds a coloured 3D mesh of the space live, on top of the camera view. You can then measure
@@ -23,6 +25,9 @@ the model and export it to other tools.
   [ARCore Depth API](https://developers.google.com/ar/devices). Most recent mid- to high-end
   phones do. Phones with a time-of-flight (ToF) sensor give the best results.
 - Google Play Services for AR. The app asks to install it if it's missing.
+
+The app's internal package ID is still `com.cameramapper3d.app` (the project's original name), so
+new versions install over older ones and keep your saved scans.
 
 ## Building
 

@@ -14,7 +14,7 @@
         android:label="@string/app_name"
         android:largeHeap="true"
         android:supportsRtl="true"
-        android:theme="@style/Theme.CameraMapper3D">
+        android:theme="@style/Theme.ScanMesh">
 
         <meta-data android:name="com.google.ar.core" android:value="required" />
 
@@ -32,7 +32,7 @@
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
             android:exported="false"
             android:screenOrientation="portrait"
-            android:theme="@style/Theme.CameraMapper3D.Fullscreen" />
+            android:theme="@style/Theme.ScanMesh.Fullscreen" />
 
         <activity
             android:name=".ViewerActivity"
