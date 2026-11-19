@@ -1,6 +1,7 @@
 package com.cameramapper3d.app
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.opengl.GLES30
 import android.opengl.GLSurfaceView
 import android.os.Bundle
@@ -12,12 +13,15 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.edit
 import com.cameramapper3d.app.databinding.ActivityViewerBinding
+import com.cameramapper3d.app.databinding.DialogStraightenBinding
 import com.cameramapper3d.app.gl.MarkerRenderer
 import com.cameramapper3d.app.gl.MeshRenderer
 import com.cameramapper3d.app.gl.ShadeMode
 import com.cameramapper3d.core.MeshData
 import com.cameramapper3d.core.MeshRaycaster
+import com.cameramapper3d.core.WallStraightener
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import java.io.File
 import java.util.Locale
@@ -120,6 +124,10 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
         android.R.id.home -> { finish(); true }
+        R.id.action_straighten -> {
+            showStraightenDialog()
+            true
+        }
         R.id.action_rename -> {
             RenameDialog.show(this, file) { renamed ->
                 file = renamed
@@ -136,6 +144,66 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             true
         }
         else -> super.onOptionsItemSelected(item)
+    }
+
+    private fun showStraightenDialog() {
+        val m = mesh ?: return
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        val content = DialogStraightenBinding.inflate(layoutInflater)
+        content.squareSwitch.isChecked = prefs.getBoolean("straighten_square", true)
+        content.snapSlider.value = prefs.getInt("straighten_snap_cm", 4).coerceIn(1, 10).toFloat()
+        fun label() { content.snapLabel.text = getString(R.string.straighten_snap_value, content.snapSlider.value.toInt()) }
+        label()
+        content.snapSlider.addOnChangeListener { _, _, _ -> label() }
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.straighten_title)
+            .setView(content.root)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.straighten_apply) { _, _ ->
+                val snapCm = content.snapSlider.value.toInt()
+                val square = content.squareSwitch.isChecked
+                prefs.edit { putBoolean("straighten_square", square); putInt("straighten_snap_cm", snapCm) }
+                straighten(m, WallStraightener.Options(snapDistance = snapCm / 100f, squareCorners = square))
+            }
+            .show()
+    }
+
+    /** Runs wall straightening, saves the result as a new scan and opens it. The original is kept. */
+    private fun straighten(m: MeshData, options: WallStraightener.Options) {
+        setExportEnabled(false)
+        binding.progress.visibility = View.VISIBLE
+        binding.measureText.setText(R.string.straighten_working)
+        worker.execute {
+            try {
+                val result = WallStraightener.process(m, options)
+                if (result.planes.isEmpty()) {
+                    runOnUiThread {
+                        binding.progress.visibility = View.GONE
+                        setExportEnabled(true)
+                        binding.measureText.setText(R.string.measure_hint)
+                        Toast.makeText(this, R.string.straighten_none, Toast.LENGTH_LONG).show()
+                    }
+                    return@execute
+                }
+                val saved = ScanStore.saveDerived(this, result.mesh, file, getString(R.string.straighten_suffix))
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        getString(R.string.straighten_done, result.wallCount, result.levelCount, ScanStore.displayName(saved)),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    startActivity(Intent(this, ViewerActivity::class.java).putExtra(EXTRA_PATH, saved.absolutePath))
+                    finish()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    binding.progress.visibility = View.GONE
+                    setExportEnabled(true)
+                    binding.measureText.setText(R.string.measure_hint)
+                    Toast.makeText(this, e.message ?: e.javaClass.simpleName, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
 
     private fun setExportEnabled(enabled: Boolean) {

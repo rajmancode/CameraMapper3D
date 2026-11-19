@@ -249,6 +249,30 @@ class ReconstructionTest {
         javax.imageio.ImageIO.write(out, "png", java.io.File("build/thumbnail-test.png"))
     }
 
+    @Test
+    fun straighteningAFusedScanFlattensTheWallOnly() {
+        val mesh = SurfaceNetsMesher().meshAll(scan())
+        val result = WallStraightener.process(mesh)
+        println("fused scan: ${result.wallCount} walls, ${result.levelCount} level, moved ${result.movedVertices}/${mesh.vertexCount}")
+        val wall = result.planes.single { !it.isHorizontal } // the back wall; there is no floor in this scene
+        assertEquals(1f, abs(wall.nz), 1e-3f)
+        assertEquals(wallZ, wall.d / wall.nz, 0.005f)
+        var onWall = 0; var wallVerts = 0
+        for (i in 0 until mesh.vertexCount) {
+            val x = mesh.positions[i * 3]; val y = mesh.positions[i * 3 + 1]; val z = mesh.positions[i * 3 + 2]
+            val (_, onSphere) = surfaceDistance(x, y, z)
+            val ox = result.mesh.positions[i * 3]; val oy = result.mesh.positions[i * 3 + 1]; val oz = result.mesh.positions[i * 3 + 2]
+            if (onSphere) {
+                // Sphere vertices more than a snap distance from the wall must not move.
+                if (abs(z - wallZ) > 0.05f) assertTrue(x == ox && y == oy && z == oz, "sphere vertex $i moved")
+            } else {
+                wallVerts++
+                if (abs(wall.distance(ox, oy, oz)) < 1e-4f) onWall++
+            }
+        }
+        assertTrue(onWall > wallVerts * 0.95, "$onWall / $wallVerts wall vertices are on the plane")
+    }
+
     private fun vec(a: FloatArray, i: Int) = floatArrayOf(a[i * 3], a[i * 3 + 1], a[i * 3 + 2])
     private fun sub(a: FloatArray, b: FloatArray) = floatArrayOf(a[0] - b[0], a[1] - b[1], a[2] - b[2])
     private fun dot(a: FloatArray, b: FloatArray) = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]

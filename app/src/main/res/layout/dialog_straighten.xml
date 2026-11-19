@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingTop="8dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/straighten_help"
+        android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/squareSwitch"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:checked="true"
+        android:text="@string/straighten_square" />
+
+    <TextView
+        android:id="@+id/snapLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:textAppearance="?attr/textAppearanceBodyLarge" />
+
+    <com.google.android.material.slider.Slider
+        android:id="@+id/snapSlider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/straighten_snap_title"
+        android:stepSize="1"
+        android:value="4"
+        android:valueFrom="1"
+        android:valueTo="10" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/straighten_snap_help"
+        android:textAppearance="?attr/textAppearanceBodySmall" />
+</LinearLayout>

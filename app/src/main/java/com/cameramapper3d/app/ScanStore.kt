@@ -34,6 +34,21 @@ object ScanStore {
         return file
     }
 
+    /** Saves a processed version of [source] as a new scan named "<source name> <suffix>". */
+    fun saveDerived(context: Context, mesh: MeshData, source: File, suffix: String): File {
+        val file = save(context, mesh, voxelSize = 0f)
+        val base = "${displayName(source)} $suffix"
+        var n = 1
+        while (true) {
+            val name = if (n == 1) base else "$base $n"
+            try {
+                return rename(file, name)
+            } catch (e: IllegalArgumentException) {
+                if (++n > 99) return file
+            }
+        }
+    }
+
     fun load(file: File): MeshData = file.inputStream().use { PlyReader.read(it) }
 
     fun thumbnailFile(scan: File) = File(scan.parentFile, scan.nameWithoutExtension + ".png")
