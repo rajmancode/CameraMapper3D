@@ -24,6 +24,7 @@ import com.cameramapper3d.app.gl.MeshRenderer
 import com.cameramapper3d.app.gl.ShadeMode
 import com.cameramapper3d.core.MeshData
 import com.cameramapper3d.core.MeshRaycaster
+import com.cameramapper3d.core.Ruler
 import com.cameramapper3d.core.MeshCleaner
 import com.cameramapper3d.core.SurfaceSelector
 import com.cameramapper3d.core.WallStraightener
@@ -53,7 +54,13 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     @Volatile private var mesh: MeshData? = null
     @Volatile private var raycaster: MeshRaycaster? = null
     @Volatile private var shadeMode = ShadeMode.COLOR
+    /** Points the user tapped (0, 1 or 2), and what is drawn: the ruler's ends and its tick marks. */
+    @Volatile private var tapped = FloatArray(0)
     @Volatile private var markers = FloatArray(0)
+    @Volatile private var rulerTicks = FloatArray(0)
+    @Volatile private var rulerMode = Ruler.Mode.FREE
+    /** Direction along the scan's main wall, 0° for the 15° ruler; null if no wall was found. */
+    @Volatile private var wallHeading: Double? = null
     private var pointSizePx = 30f
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,6 +89,16 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             binding.surfaceView.requestRender()
         }
         binding.clearButton.setOnClickListener { clearMeasurement() }
+        binding.rulerGroup.addOnButtonCheckedListener { _, id, checked ->
+            if (!checked) return@addOnButtonCheckedListener
+            rulerMode = when (id) {
+                R.id.rulerLevel -> Ruler.Mode.LEVEL
+                R.id.rulerVertical -> Ruler.Mode.VERTICAL
+                R.id.rulerSnap -> Ruler.Mode.SNAP
+                else -> Ruler.Mode.FREE
+            }
+            updateMeasurement()
+        }
         binding.plyButton.setOnClickListener { share(ScanStore.Format.PLY) }
         binding.objButton.setOnClickListener { share(ScanStore.Format.OBJ) }
         binding.selectCancelButton.setOnClickListener { exitSelectMode() }
@@ -102,6 +119,7 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             try {
                 val m = ScanStore.load(file)
                 val rc = MeshRaycaster(m)
+                wallHeading = WallStraightener.mainWallHeading(m)
                 camera.fit(m.bounds())
                 mesh = m
                 raycaster = rc
@@ -440,27 +458,58 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val ray = camera.rayThrough(x, y)
         worker.execute {
             val hit = rc.cast(ray[0], ray[1], ray[2], ray[3], ray[4], ray[5]) ?: return@execute
-            val current = markers
-            markers = if (current.size >= 6) floatArrayOf(hit.x, hit.y, hit.z) else current + floatArrayOf(hit.x, hit.y, hit.z)
-            val pts = markers
-            runOnUiThread {
-                binding.measureText.text = if (pts.size == 6) formatMeasurement(pts) else "Tap a second point…"
-                binding.surfaceView.requestRender()
-            }
+            val current = tapped
+            tapped = if (current.size >= 6) floatArrayOf(hit.x, hit.y, hit.z) else current + floatArrayOf(hit.x, hit.y, hit.z)
+            runOnUiThread { updateMeasurement() }
         }
     }
 
     private fun clearMeasurement() {
-        markers = FloatArray(0)
-        binding.measureText.setText(R.string.measure_hint)
+        tapped = FloatArray(0)
+        updateMeasurement()
+    }
+
+    /** Applies the ruler mode to the tapped points and refreshes the reading and the drawing. */
+    private fun updateMeasurement() {
+        val p = tapped
+        when (p.size) {
+            6 -> {
+                val m = Ruler.measure(p.copyOfRange(0, 3), p.copyOfRange(3, 6), rulerMode, wallHeading ?: 0.0)
+                markers = m.start + m.end
+                rulerTicks = Ruler.ticks(m)
+                binding.measureText.text = describe(m)
+            }
+            3 -> {
+                markers = p
+                rulerTicks = FloatArray(0)
+                binding.measureText.setText(R.string.measure_second)
+            }
+            else -> {
+                markers = FloatArray(0)
+                rulerTicks = FloatArray(0)
+                binding.measureText.setText(R.string.measure_hint)
+            }
+        }
         binding.surfaceView.requestRender()
     }
 
-    private fun formatMeasurement(p: FloatArray): String {
-        val dx = p[3] - p[0]; val dy = p[4] - p[1]; val dz = p[5] - p[2]
-        val total = sqrt(dx * dx + dy * dy + dz * dz)
-        val horizontal = sqrt(dx * dx + dz * dz)
-        return "${formatLength(total)}\nhorizontal ${formatLength(horizontal)} · vertical ${formatLength(abs(dy))}"
+    private fun describe(m: Ruler.Measurement): String = when (rulerMode) {
+        Ruler.Mode.FREE -> getString(R.string.ruler_free_reading, formatLength(m.length), formatLength(m.horizontal), formatLength(m.vertical))
+        Ruler.Mode.LEVEL -> getString(R.string.ruler_level_reading, formatLength(m.length))
+        Ruler.Mode.VERTICAL -> getString(R.string.ruler_vertical_reading, formatLength(m.length))
+        Ruler.Mode.SNAP -> {
+            val e = Math.round(m.elevationDegrees)
+            val elevation = when {
+                e == 0 -> getString(R.string.ruler_angle_level)
+                abs(e) == 90 -> getString(R.string.ruler_angle_vertical)
+                e > 0 -> getString(R.string.ruler_angle_up, e)
+                else -> getString(R.string.ruler_angle_down, -e)
+            }
+            val h = Math.round(m.headingDegrees)
+            val heading = if (wallHeading != null) getString(R.string.ruler_heading_wall, h) else getString(R.string.ruler_heading, h)
+            if (abs(e) == 90) getString(R.string.ruler_vertical_reading, formatLength(m.length))
+            else getString(R.string.ruler_snap_reading, formatLength(m.length), elevation, heading)
+        }
     }
 
     private fun formatLength(m: Float): String =
@@ -528,6 +577,7 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         meshRenderer.draw(vp, shadeMode, alpha = 1f, lightDir = light)
         highlightRenderer.sync(highlights)
         highlightRenderer.draw(vp, ShadeMode.COLOR, alpha = 0.6f, lightDir = light, drawOnTop = true)
+        markerRenderer.drawSegments(vp, rulerTicks)
         markerRenderer.draw(vp, markers, connect = true, pointSizePx = pointSizePx)
     }
 

@@ -45,6 +45,23 @@ class MarkerRenderer {
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
     }
 
+    /** Draws separate line segments ([segments] = x1 y1 z1 x2 y2 z2 per segment), e.g. ruler ticks. */
+    fun drawSegments(mvp: FloatArray, segments: FloatArray) {
+        if (segments.isEmpty()) return
+        val buf = GlUtil.floatBuffer(segments)
+        GLES30.glDisable(GLES30.GL_DEPTH_TEST)
+        GLES30.glUseProgram(program)
+        GLES30.glUniformMatrix4fv(uMvp, 1, false, mvp, 0)
+        GLES30.glUniform1i(uRound, 0)
+        GLES30.glUniform4f(uColor, 1f, 0.85f, 0.2f, 1f)
+        GLES30.glLineWidth(3f)
+        GLES30.glEnableVertexAttribArray(0)
+        GLES30.glVertexAttribPointer(0, 3, GLES30.GL_FLOAT, false, 0, buf)
+        GLES30.glDrawArrays(GLES30.GL_LINES, 0, segments.size / 3)
+        GLES30.glDisableVertexAttribArray(0)
+        GLES30.glEnable(GLES30.GL_DEPTH_TEST)
+    }
+
     private companion object {
         const val VERTEX = """#version 300 es
             uniform mat4 u_mvp;

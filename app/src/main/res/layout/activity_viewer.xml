@@ -116,6 +116,49 @@
             android:layout_height="wrap_content"
             android:textAppearance="?attr/textAppearanceBodySmall" />
 
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/rulerGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:contentDescription="@string/ruler_mode"
+            app:checkedButton="@+id/rulerFree"
+            app:selectionRequired="true"
+            app:singleSelection="true">
+
+            <Button
+                android:id="@+id/rulerFree"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/ruler_free" />
+
+            <Button
+                android:id="@+id/rulerLevel"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/ruler_level" />
+
+            <Button
+                android:id="@+id/rulerVertical"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/ruler_vertical" />
+
+            <Button
+                android:id="@+id/rulerSnap"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/ruler_snap" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

@@ -56,6 +56,16 @@ object WallStraightener {
     private const val WALL_ANGLE_TOL = 10.0 * PI / 180.0
     private const val MATCH_NORMAL_COS = 0.5f // vertex normal within 60° of the plane normal
 
+    /**
+     * Direction along the scan's largest wall (radians in the horizontal plane, from +X towards +Z),
+     * or null if no wall is found. Used as 0° for angle-snapped measuring.
+     */
+    fun mainWallHeading(mesh: MeshData): Double? {
+        if (mesh.isEmpty) return null
+        val biggest = findWallPlanes(TriangleInfo(mesh), Options(squareCorners = false)).maxByOrNull { it.area } ?: return null
+        return atan2(biggest.nz.toDouble(), biggest.nx.toDouble()) + PI / 2
+    }
+
     fun process(mesh: MeshData, options: Options = Options()): Result {
         if (mesh.isEmpty) return Result(mesh, emptyList(), 0)
         val tri = TriangleInfo(mesh)
