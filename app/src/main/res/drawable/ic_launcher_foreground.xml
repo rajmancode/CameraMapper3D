@@ -18,10 +18,12 @@
                 </gradient>
             </aapt:attr>
         </path>
-        <group android:translateX="-3.1" android:translateY="-2.6">
-            <path android:pathData="M45,37 L45,85 M45,37 L63,37 A13.5,13.5 0 0 1 63,64 L45,64 M60,64 L74,80" android:strokeColor="#FFFFFF"
-                android:strokeWidth="10.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
-            <path android:pathData="M72.0,85.5 a6.5,6.5 0 1,0 13.0,0 a6.5,6.5 0 1,0 -13.0,0 Z" android:fillColor="#F59E0B" android:strokeColor="#FFFFFF" android:strokeWidth="3" />
-        </group>
+        
+        <path android:pathData="M35,45.5 L85,45.5 M35,45.5 L60,89 M85,45.5 L60,89" android:strokeColor="#FFFFFF" android:strokeAlpha="0.55"
+            android:strokeWidth="3.5" android:strokeLineCap="round" />
+        <path android:pathData="M60,31 L85,45.5 L85,74.5 L60,89 L35,74.5 L35,45.5 Z M35,45.5 L60,60 L85,45.5 M60,60 L60,89" android:strokeColor="#FFFFFF"
+            android:strokeWidth="6.5" android:strokeLineCap="round" android:strokeLineJoin="round" />
+        <path android:pathData="M54.5,60 a5.5,5.5 0 1,0 11,0 a5.5,5.5 0 1,0 -11,0 Z" android:fillColor="#FFFFFF" />
+        <path android:pathData="M78,45.5 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0 Z" android:fillColor="#F59E0B" android:strokeColor="#FFFFFF" android:strokeWidth="3" />
     </group>
 </vector>
