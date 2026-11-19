@@ -57,4 +57,27 @@ data class IntegrationParams(
     val maxDepth: Float = 4.0f,
     /** Ignore pixels whose confidence (0..255) is below this. Only used when the frame has confidence. */
     val minConfidence: Int = 128,
-)
+    /**
+     * Observations from up to this distance (metres) count fully; further ones count
+     * (referenceDistance / depth)⁴. Phone depth error grows with the square of distance, so its
+     * variance grows with the fourth power, and inverse-variance weighting is the statistically
+     * best way to combine them. A close-up pass therefore outweighs, and corrects, what was first
+     * seen from across the room. 0 makes every observation count the same.
+     */
+    val referenceDistance: Float = 2.0f,
+    /** The least a far observation counts, relative to a close one. */
+    val minDistanceWeight: Float = 0.05f,
+    /** Let confident raw-depth pixels count more than doubtful ones (only when the frame has confidence). */
+    val weightByConfidence: Boolean = true,
+) {
+    /** How much one observation at depth [depth] with [confidence] (0..255, or -1 for none) counts. */
+    fun observationWeight(depth: Float, confidence: Int): Float {
+        var w = 1f
+        if (referenceDistance > 0f && depth > referenceDistance) {
+            val r = referenceDistance / depth
+            w = maxOf(minDistanceWeight, r * r * r * r)
+        }
+        if (weightByConfidence && confidence >= 0) w *= 0.25f + 0.75f * confidence / 255f
+        return w
+    }
+}

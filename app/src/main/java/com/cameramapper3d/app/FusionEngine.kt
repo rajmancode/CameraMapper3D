@@ -17,7 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class FusionEngine(voxelSize: Float) {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "fusion").apply { priority = Thread.NORM_PRIORITY - 1 } }
     private val volume = TsdfVolume(voxelSize = voxelSize)
-    private val liveMesher = SurfaceNetsMesher(minWeight = 2)
+    private val liveMesher = SurfaceNetsMesher()
     private val busy = AtomicBoolean(false)
 
     /** Latest mesh of every block that contains surface; read by the renderer. */
@@ -63,7 +63,7 @@ class FusionEngine(voxelSize: Float) {
 
     /** Builds the final welded mesh on the fusion thread and passes it to [onDone] (on that thread). */
     fun finish(onDone: (MeshData) -> Unit) {
-        executor.execute { onDone(SurfaceNetsMesher(minWeight = 2).meshAll(volume)) }
+        executor.execute { onDone(SurfaceNetsMesher().meshAll(volume)) }
     }
 
     fun shutdown() {
@@ -72,9 +72,9 @@ class FusionEngine(voxelSize: Float) {
 
     companion object {
         /**
-         * Each block is ~3.5 KB, so this caps the volume at roughly 200 MB. At 2 cm voxels that is
+         * Each block is ~5 KB, so this caps the volume at roughly 225 MB. At 2 cm voxels that is
          * several hundred m² of observed surface (a large room or a house facade); at 4 cm, four times more.
          */
-        const val MAX_BLOCKS = 60_000
+        const val MAX_BLOCKS = 45_000
     }
 }

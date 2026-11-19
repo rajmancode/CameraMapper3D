@@ -273,6 +273,54 @@ class ReconstructionTest {
         assertTrue(onWall > wallVerts * 0.95, "$onWall / $wallVerts wall vertices are on the plane")
     }
 
+    /** Mean error of the reconstructed wall beside the sphere after far, biased views then a few close ones. */
+    private fun wallErrorAfterCloseUpPass(params: IntegrationParams): Float {
+        val volume = TsdfVolume(voxelSize = 0.02f)
+        val target = floatArrayOf(1.2f, 0f, -3f) // a patch of wall to the right of the sphere
+        // Far views (4.8 m) whose depth reads 4 cm too far, as far phone depth tends to.
+        repeat(12) { k ->
+            val pose = lookAt(floatArrayOf(1.2f + (k % 3 - 1) * 0.1f, (k / 3 - 1.5f) * 0.1f, 1.8f), target)
+            val (depth, _) = render(pose, depthIntr, color = false)
+            for (i in depth.indices) if (depth[i] > 0) depth[i] = (depth[i] + 40).toShort()
+            volume.integrate(DepthFrame(depth, depthIntr, pose), params)
+        }
+        // A short close-up pass (1.2 m) with accurate depth.
+        repeat(3) { k ->
+            val pose = lookAt(floatArrayOf(1.2f + (k - 1) * 0.1f, 0f, -1.8f), target)
+            val (depth, _) = render(pose, depthIntr, color = false)
+            volume.integrate(DepthFrame(depth, depthIntr, pose), params)
+        }
+        val mesh = SurfaceNetsMesher().meshAll(volume)
+        var sum = 0.0; var n = 0
+        for (i in 0 until mesh.vertexCount) {
+            val x = mesh.positions[i * 3]; val y = mesh.positions[i * 3 + 1]; val z = mesh.positions[i * 3 + 2]
+            if (abs(x - 1.2f) < 0.3f && abs(y) < 0.3f && z < -2.8f) { sum += (z - wallZ); n++ }
+        }
+        assertTrue(n > 100, "wall patch should be reconstructed ($n vertices)")
+        return abs((sum / n).toFloat())
+    }
+
+    @Test
+    fun closeUpPassCorrectsWhatWasSeenFromFarAway() {
+        val equal = wallErrorAfterCloseUpPass(IntegrationParams(maxDepth = 6f, referenceDistance = 0f))
+        val weighted = wallErrorAfterCloseUpPass(IntegrationParams(maxDepth = 6f))
+        println("wall error after close-up pass: every look equal ${equal * 100} cm, weighted ${weighted * 100} cm")
+        assertTrue(equal > 0.03f, "with equal weights the far error should mostly remain ($equal)")
+        assertTrue(weighted < 0.01f, "close views should pull the wall back near its true position ($weighted)")
+    }
+
+    @Test
+    fun observationWeights() {
+        val p = IntegrationParams()
+        assertEquals(1f, p.observationWeight(1.0f, -1), 1e-6f)
+        assertEquals(1f, p.observationWeight(2.0f, -1), 1e-6f)
+        assertEquals(0.0625f, p.observationWeight(4.0f, -1), 1e-6f)
+        assertEquals(0.05f, p.observationWeight(10f, -1), 1e-6f) // never below the floor
+        assertEquals(1f, p.observationWeight(1.0f, 255), 1e-6f)
+        assertEquals(0.25f, p.observationWeight(1.0f, 0), 1e-6f)
+        assertEquals(1f, IntegrationParams(referenceDistance = 0f, weightByConfidence = false).observationWeight(5f, 0), 1e-6f)
+    }
+
     private fun vec(a: FloatArray, i: Int) = floatArrayOf(a[i * 3], a[i * 3 + 1], a[i * 3 + 2])
     private fun sub(a: FloatArray, b: FloatArray) = floatArrayOf(a[0] - b[0], a[1] - b[1], a[2] - b[2])
     private fun dot(a: FloatArray, b: FloatArray) = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]

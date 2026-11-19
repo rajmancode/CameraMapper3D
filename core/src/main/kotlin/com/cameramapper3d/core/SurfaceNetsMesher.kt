@@ -13,13 +13,15 @@ import kotlin.math.sqrt
  * live updates incremental; neighbouring block meshes share identical border vertices,
  * which [MeshData.merge] welds back together.
  *
- * @param minWeight voxels observed fewer times than this are treated as unknown (filters noise).
+ * @param minObservations voxels seen fewer times than this are treated as unknown (filters noise).
+ *   This counts looks of any quality, so areas only ever seen from far away still appear; how much
+ *   each look counts towards the surface's position is the volume's weighting.
  * @param maxJump crossings between samples whose values differ by more than this are ignored.
  *   This removes the spurious surfaces TSDFs produce where +1 (far free space) meets
  *   negative values from another surface.
  */
 class SurfaceNetsMesher(
-    val minWeight: Int = 2,
+    val minObservations: Int = 2,
     val maxJump: Float = 1.0f,
 ) {
     private val p = BLOCK + 2 // padded samples per axis: local -1..BLOCK
@@ -27,7 +29,7 @@ class SurfaceNetsMesher(
 
     // Scratch buffers, reused between blocks (the mesher is single-threaded like the volume).
     private val f = FloatArray(p * p * p)
-    private val w = IntArray(p * p * p)
+    private val w = FloatArray(p * p * p)
     private val col = IntArray(p * p * p)
     private val cellPos = FloatArray(c * c * c * 3)
     private val cellNrm = FloatArray(c * c * c * 3)
@@ -75,11 +77,11 @@ class SurfaceNetsMesher(
         val q = IntArray(4)
         for (z in 0 until BLOCK) for (y in 0 until BLOCK) for (x in 0 until BLOCK) {
             val s0 = sIdx(x, y, z)
-            if (w[s0] < minWeight) continue
+            if (w[s0] < minObservations) continue
             val f0 = f[s0]
             for (axis in 0 until 3) {
                 val s1 = when (axis) { 0 -> sIdx(x + 1, y, z); 1 -> sIdx(x, y + 1, z); else -> sIdx(x, y, z + 1) }
-                if (w[s1] < minWeight) continue
+                if (w[s1] < minObservations) continue
                 val f1 = f[s1]
                 if ((f0 < 0f) == (f1 < 0f) || abs(f0 - f1) > maxJump) continue
                 // Four cells around the edge, in counter-clockwise order about +axis.
@@ -132,16 +134,16 @@ class SurfaceNetsMesher(
                     val vx = lx - ox * BLOCK
                     val blk = neighbours[(oz + 1) * 9 + (oy + 1) * 3 + (ox + 1)]
                     if (blk == null) {
-                        f[i] = 1f; w[i] = 0; col[i] = 0x808080
+                        f[i] = 1f; w[i] = 0f; col[i] = 0x808080
                     } else {
                         val vi = TsdfVolume.voxelIndex(vx, vy, vz)
                         val value = blk.tsdfAt(vi)
-                        val weight = blk.weightAt(vi)
+                        val weight = blk.countAt(vi).toFloat()
                         f[i] = value; w[i] = weight
                         col[i] = ((blk.rgb[vi * 3].toInt() and 0xFF) shl 16) or
                             ((blk.rgb[vi * 3 + 1].toInt() and 0xFF) shl 8) or
                             (blk.rgb[vi * 3 + 2].toInt() and 0xFF)
-                        if (weight >= minWeight) { if (value < 0f) hasNeg = true else hasPos = true }
+                        if (weight >= minObservations) { if (value < 0f) hasNeg = true else hasPos = true }
                     }
                     i++
                 }
@@ -158,7 +160,7 @@ class SurfaceNetsMesher(
             var valid = true
             for (k in 0 until 8) {
                 val s = sIdx(x + (k and 1), y + ((k shr 1) and 1), z + ((k shr 2) and 1))
-                if (w[s] < minWeight) { valid = false; break }
+                if (w[s] < minObservations) { valid = false; break }
                 cornerIdx[k] = s
             }
             if (!valid) continue

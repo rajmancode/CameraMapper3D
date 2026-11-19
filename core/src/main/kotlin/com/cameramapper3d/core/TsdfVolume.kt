@@ -1,6 +1,7 @@
 package com.cameramapper3d.core
 
 import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -18,12 +19,16 @@ import kotlin.math.min
 class TsdfVolume(
     val voxelSize: Float = 0.02f,
     truncationVoxels: Float = 4f,
-    val maxWeight: Int = 64,
+    /**
+     * Cap on a voxel's accumulated weight, in full-weight observations. Keeping it moderate means a
+     * voxel never "freezes": later, better observations can still move it.
+     */
+    val maxWeight: Float = 32f,
 ) {
     init {
         require(voxelSize > 0f)
         require(truncationVoxels >= 1f)
-        require(maxWeight in 1..255)
+        require(maxWeight > 0f && maxWeight * WEIGHT_SCALE <= Short.MAX_VALUE)
     }
 
     val truncation: Float = voxelSize * truncationVoxels
@@ -105,7 +110,7 @@ class TsdfVolume(
         val rgb = frame.rgb
         val colorBand = trunc * 0.5f
         val vs = voxelSize
-        val maxW = maxWeight
+        val maxW = (maxWeight * WEIGHT_SCALE).toInt()
         for (key in touched) {
             val block = blocks.getOrPut(key) { VoxelBlock() }
             val baseX = unpackX(key) * BLOCK
@@ -131,30 +136,34 @@ class TsdfVolume(
                 val pIdx = vi * dw + ui
                 val meas = (depth[pIdx].toInt() and 0xFFFF) * 0.001f
                 if (meas < minD || meas > maxD) continue
-                if (conf != null && (conf[pIdx].toInt() and 0xFF) < minConf) continue
+                val pixelConf = if (conf != null) conf[pIdx].toInt() and 0xFF else -1
+                if (pixelConf in 0 until minConf) continue
                 val sdf = meas - dist
                 if (sdf < -trunc) continue // hidden behind the observed surface
                 val tsdf = min(1f, sdf / trunc)
 
-                val w = block.weight[idx].toInt() and 0xFF
+                // Weighted running average: closer, more confident observations count for more.
+                val obs = max(1, (params.observationWeight(meas, pixelConf) * WEIGHT_SCALE).toInt())
+                val w = block.weight[idx].toInt()
                 val old = block.tsdf[idx] * INV_TSDF_SCALE
-                val nw = w + 1
-                val fused = (old * w + tsdf) / nw
+                val fused = (old * w + tsdf * obs) / (w + obs)
                 block.tsdf[idx] = (fused * TSDF_SCALE).toInt().toShort()
-                block.weight[idx] = min(nw, maxW).toByte()
+                block.weight[idx] = min(w + obs, maxW).toShort()
+                val n = block.count[idx].toInt() and 0xFF
+                if (n < 255) block.count[idx] = (n + 1).toByte()
 
                 if (rgb != null && ci != null && sdf < colorBand && sdf > -colorBand) {
                     val cu = (ci.fx * xc / dist + ci.cx + 0.5f).toInt()
                     val cv = (-ci.fy * yc / dist + ci.cy + 0.5f).toInt()
                     if (cu >= 0 && cv >= 0 && cu < ci.width && cv < ci.height) {
                         val c = rgb[cv * ci.width + cu]
-                        val cw = block.colorWeight[idx].toInt() and 0xFF
-                        val ncw = cw + 1
+                        val cw = block.colorWeight[idx].toInt()
+                        val ncw = cw + obs
                         val o = idx * 3
-                        block.rgb[o] = ((((block.rgb[o].toInt() and 0xFF) * cw) + ((c shr 16) and 0xFF)) / ncw).toByte()
-                        block.rgb[o + 1] = ((((block.rgb[o + 1].toInt() and 0xFF) * cw) + ((c shr 8) and 0xFF)) / ncw).toByte()
-                        block.rgb[o + 2] = ((((block.rgb[o + 2].toInt() and 0xFF) * cw) + (c and 0xFF)) / ncw).toByte()
-                        block.colorWeight[idx] = min(ncw, maxW).toByte()
+                        block.rgb[o] = ((((block.rgb[o].toInt() and 0xFF) * cw) + ((c shr 16) and 0xFF) * obs) / ncw).toByte()
+                        block.rgb[o + 1] = ((((block.rgb[o + 1].toInt() and 0xFF) * cw) + ((c shr 8) and 0xFF) * obs) / ncw).toByte()
+                        block.rgb[o + 2] = ((((block.rgb[o + 2].toInt() and 0xFF) * cw) + (c and 0xFF) * obs) / ncw).toByte()
+                        block.colorWeight[idx] = min(ncw, maxW).toShort()
                     }
                 }
             }
@@ -180,6 +189,8 @@ class TsdfVolume(
         const val BLOCK_VOXELS = BLOCK * BLOCK * BLOCK
         internal const val TSDF_SCALE = 32767f
         internal const val INV_TSDF_SCALE = 1f / 32767f
+        /** Weights are stored in fixed point: one full-weight observation = 256. */
+        internal const val WEIGHT_SCALE = 256
 
         private const val BITS = 21
         private const val MASK = (1L shl BITS) - 1
@@ -202,10 +213,14 @@ class TsdfVolume(
 /** Storage for [TsdfVolume.BLOCK]³ voxels. TSDF is stored as fixed point in [-1, 1]. */
 class VoxelBlock {
     val tsdf = ShortArray(TsdfVolume.BLOCK_VOXELS) { TsdfVolume.TSDF_SCALE.toInt().toShort() }
-    val weight = ByteArray(TsdfVolume.BLOCK_VOXELS)
+    val weight = ShortArray(TsdfVolume.BLOCK_VOXELS)
     val rgb = ByteArray(TsdfVolume.BLOCK_VOXELS * 3) { 0x80.toByte() }
-    val colorWeight = ByteArray(TsdfVolume.BLOCK_VOXELS)
+    val colorWeight = ShortArray(TsdfVolume.BLOCK_VOXELS)
+    /** How many times the voxel has been observed (any distance), up to 255; decides whether it is shown. */
+    val count = ByteArray(TsdfVolume.BLOCK_VOXELS)
 
     fun tsdfAt(index: Int): Float = tsdf[index] * TsdfVolume.INV_TSDF_SCALE
-    fun weightAt(index: Int): Int = weight[index].toInt() and 0xFF
+    /** Accumulated weight, in full-weight observations. */
+    fun weightAt(index: Int): Float = weight[index].toFloat() / TsdfVolume.WEIGHT_SCALE
+    fun countAt(index: Int): Int = count[index].toInt() and 0xFF
 }
