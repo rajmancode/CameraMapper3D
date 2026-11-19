@@ -60,7 +60,8 @@ class MeshRenderer {
         meshes.clear()
     }
 
-    fun draw(mvp: FloatArray, mode: ShadeMode, alpha: Float, lightDir: FloatArray) {
+    /** @param drawOnTop pull the surface slightly towards the camera so it shows over the same geometry (highlights). */
+    fun draw(mvp: FloatArray, mode: ShadeMode, alpha: Float, lightDir: FloatArray, drawOnTop: Boolean = false) {
         if (meshes.isEmpty()) return
         GLES30.glUseProgram(program)
         GLES30.glUniformMatrix4fv(uMvp, 1, false, mvp, 0)
@@ -72,12 +73,17 @@ class MeshRenderer {
             GLES30.glBlendFunc(GLES30.GL_SRC_ALPHA, GLES30.GL_ONE_MINUS_SRC_ALPHA)
         }
         GLES30.glEnable(GLES30.GL_DEPTH_TEST)
+        if (drawOnTop) {
+            GLES30.glEnable(GLES30.GL_POLYGON_OFFSET_FILL)
+            GLES30.glPolygonOffset(-2f, -8f)
+        }
         for (m in meshes.values) {
             GLES30.glBindVertexArray(m.vao)
             GLES30.glDrawElements(GLES30.GL_TRIANGLES, m.count, GLES30.GL_UNSIGNED_INT, 0)
         }
         GLES30.glBindVertexArray(0)
         GLES30.glDisable(GLES30.GL_BLEND)
+        GLES30.glDisable(GLES30.GL_POLYGON_OFFSET_FILL)
     }
 
     private fun upload(mesh: MeshData): GpuMesh {

@@ -247,7 +247,7 @@ object WallStraightener {
     }
 
     /** New mesh with moved positions, recomputed normals and collapsed triangles removed. */
-    private fun rebuild(src: MeshData, pos: FloatArray): MeshData {
+    internal fun rebuild(src: MeshData, pos: FloatArray): MeshData {
         val keep = IntList(src.indices.size)
         val normals = FloatArray(pos.size)
         for (t in 0 until src.triangleCount) {

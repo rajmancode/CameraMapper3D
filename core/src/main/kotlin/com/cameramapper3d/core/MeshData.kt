@@ -156,5 +156,7 @@ internal class IntList(initial: Int = 64) {
         data[size++] = v
     }
 
+    operator fun get(index: Int): Int = data[index]
+
     fun toArray(): IntArray = data.copyOf(size)
 }
