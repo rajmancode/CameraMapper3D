@@ -10,7 +10,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.util.LruCache
-import android.widget.ArrayAdapter
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
@@ -46,7 +45,9 @@ class MainActivity : AppCompatActivity() {
         binding.scanList.adapter = adapter
 
         val labels = DETAIL_LEVELS.map { it.label }
-        binding.detailPicker.setAdapter(ArrayAdapter(this, android.R.layout.simple_list_item_1, labels))
+        // "Simple items" never filter, so the menu always lists every level. (A plain ArrayAdapter filters
+        // by the text already in the box, which left only the current choice visible.)
+        binding.detailPicker.setSimpleItems(labels.toTypedArray())
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         var selected = prefs.getInt("detail", 1).coerceIn(DETAIL_LEVELS.indices)
         binding.detailPicker.setText(labels[selected], false)

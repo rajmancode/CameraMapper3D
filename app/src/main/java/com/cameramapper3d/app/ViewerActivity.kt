@@ -11,13 +11,14 @@ import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
 import com.cameramapper3d.app.databinding.ActivityViewerBinding
-import com.cameramapper3d.app.databinding.DialogCleanBinding
-import com.cameramapper3d.app.databinding.DialogStraightenBinding
+import com.cameramapper3d.app.databinding.DialogOptimiseBinding
 import com.cameramapper3d.app.gl.MarkerRenderer
 import com.cameramapper3d.app.gl.MeshRenderer
 import com.cameramapper3d.app.gl.ShadeMode
@@ -141,16 +142,8 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean = when (item.itemId) {
         android.R.id.home -> { if (selecting) exitSelectMode() else finish(); true }
-        R.id.action_flatten -> {
-            enterSelectMode()
-            true
-        }
-        R.id.action_clean -> {
-            showCleanDialog()
-            true
-        }
-        R.id.action_straighten -> {
-            showStraightenDialog()
+        R.id.action_optimise -> {
+            showOptimiseDialog()
             true
         }
         R.id.action_rename -> {
@@ -171,34 +164,122 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         else -> super.onOptionsItemSelected(item)
     }
 
-    private fun showStraightenDialog() {
+    // --- Optimisation: the chosen post-processing steps, run together and saved as one new scan ---
+
+    private data class OptimiseOptions(
+        val clean: Boolean,
+        val minPieceArea: Float,
+        val flattenSelected: Boolean,
+        val matchColour: Boolean,
+        val straighten: Boolean,
+        val snapDistance: Float,
+        val squareCorners: Boolean,
+    )
+
+    /** Options waiting for the user to finish selecting surfaces. */
+    private var pendingOptimise: OptimiseOptions? = null
+
+    private fun showOptimiseDialog() {
         val m = mesh ?: return
         val prefs = getSharedPreferences("settings", MODE_PRIVATE)
-        val content = DialogStraightenBinding.inflate(layoutInflater)
-        content.squareSwitch.isChecked = prefs.getBoolean("straighten_square", true)
-        content.snapSlider.value = prefs.getInt("straighten_snap_cm", 4).coerceIn(1, 10).toFloat()
-        fun label() { content.snapLabel.text = getString(R.string.straighten_snap_value, content.snapSlider.value.toInt()) }
-        label()
-        content.snapSlider.addOnChangeListener { _, _, _ -> label() }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.straighten_title)
-            .setView(content.root)
+        val c = DialogOptimiseBinding.inflate(layoutInflater)
+        c.cleanCheck.isChecked = prefs.getBoolean("opt_clean", true)
+        c.flattenCheck.isChecked = prefs.getBoolean("opt_flatten", false)
+        c.straightenCheck.isChecked = prefs.getBoolean("opt_straighten", false)
+        c.matchColourOption.isChecked = prefs.getBoolean("opt_match_colour", false)
+        c.squareOption.isChecked = prefs.getBoolean("opt_square", true)
+        val area = prefs.getFloat("opt_min_area", 0.2f).coerceIn(0.05f, 2f)
+        c.cleanSlider.value = 0.05f + Math.round((area - 0.05f) / 0.05f) * 0.05f
+        c.snapSlider.value = prefs.getInt("opt_snap_cm", 4).coerceIn(1, 10).toFloat()
+
+        val dialog = MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.optimise_title)
+            .setView(c.root)
             .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.straighten_apply) { _, _ ->
-                val snapCm = content.snapSlider.value.toInt()
-                val square = content.squareSwitch.isChecked
-                prefs.edit { putBoolean("straighten_square", square); putInt("straighten_snap_cm", snapCm) }
-                straighten(m, WallStraightener.Options(snapDistance = snapCm / 100f, squareCorners = square))
+            .setPositiveButton(R.string.optimise_run, null) // set below; its label depends on the choices
+            .create()
+
+        fun refresh() {
+            c.cleanLabel.text = getString(R.string.optimise_clean_value, c.cleanSlider.value)
+            c.snapLabel.text = getString(R.string.straighten_snap_value, c.snapSlider.value.toInt())
+            setEnabledDeep(c.cleanOptions, c.cleanCheck.isChecked)
+            setEnabledDeep(c.flattenOptions, c.flattenCheck.isChecked)
+            setEnabledDeep(c.straightenOptions, c.straightenCheck.isChecked)
+            c.squareOption.isEnabled = c.flattenCheck.isChecked || c.straightenCheck.isChecked
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE)?.apply {
+                isEnabled = c.cleanCheck.isChecked || c.flattenCheck.isChecked || c.straightenCheck.isChecked
+                setText(if (c.flattenCheck.isChecked) R.string.optimise_next else R.string.optimise_run)
             }
-            .show()
+        }
+        for (box in listOf(c.cleanCheck, c.flattenCheck, c.straightenCheck)) box.setOnCheckedChangeListener { _, _ -> refresh() }
+        c.cleanSlider.addOnChangeListener { _, _, _ -> refresh() }
+        c.snapSlider.addOnChangeListener { _, _, _ -> refresh() }
+
+        dialog.setOnShowListener {
+            refresh()
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val o = OptimiseOptions(
+                    clean = c.cleanCheck.isChecked,
+                    minPieceArea = c.cleanSlider.value,
+                    flattenSelected = c.flattenCheck.isChecked,
+                    matchColour = c.matchColourOption.isChecked,
+                    straighten = c.straightenCheck.isChecked,
+                    snapDistance = c.snapSlider.value / 100f,
+                    squareCorners = c.squareOption.isChecked,
+                )
+                prefs.edit {
+                    putBoolean("opt_clean", o.clean); putBoolean("opt_flatten", o.flattenSelected)
+                    putBoolean("opt_straighten", o.straighten); putBoolean("opt_match_colour", o.matchColour)
+                    putBoolean("opt_square", o.squareCorners); putFloat("opt_min_area", o.minPieceArea)
+                    putInt("opt_snap_cm", c.snapSlider.value.toInt())
+                }
+                dialog.dismiss()
+                if (o.flattenSelected) {
+                    pendingOptimise = o
+                    enterSelectMode(o.matchColour)
+                } else {
+                    runOptimise(m, o, emptyList(), null)
+                }
+            }
+        }
+        dialog.show()
     }
 
-    /** Runs wall straightening, saves the result as a new scan and opens it. The original is kept. */
-    private fun straighten(m: MeshData, options: WallStraightener.Options) {
-        processAndOpen(R.string.straighten_working, R.string.straighten_suffix) {
-            val result = WallStraightener.process(m, options)
-            if (result.planes.isEmpty()) null
-            else result.mesh to { name: String -> getString(R.string.straighten_done, result.wallCount, result.levelCount, name) }
+    private fun setEnabledDeep(view: View, enabled: Boolean) {
+        view.isEnabled = enabled
+        view.alpha = if (enabled) 1f else 0.4f
+        if (view is ViewGroup) for (i in 0 until view.childCount) setEnabledDeep(view.getChildAt(i), enabled)
+    }
+
+    /**
+     * Runs the chosen steps in order: flatten the selected surfaces (selections refer to this mesh, so
+     * this goes first), remove floating pieces, then straighten any remaining walls automatically.
+     */
+    private fun runOptimise(m: MeshData, o: OptimiseOptions, chosen: List<IntArray>, s: SurfaceSelector?) {
+        processAndOpen(R.string.optimise_working, R.string.optimise_suffix, nothingText = R.string.optimise_nothing) {
+            var current = m
+            val done = ArrayList<String>()
+            if (chosen.isNotEmpty() && s != null) {
+                val r = s.flatten(chosen, squareCorners = o.squareCorners)
+                current = r.mesh
+                done += resources.getQuantityString(R.plurals.optimise_part_flatten, r.planes.size, r.planes.size)
+            }
+            if (o.clean) {
+                val r = MeshCleaner.removeSmallPieces(current, o.minPieceArea)
+                if (r.removedPieces > 0) {
+                    current = r.mesh
+                    done += resources.getQuantityString(R.plurals.optimise_part_clean, r.removedPieces, r.removedPieces)
+                }
+            }
+            if (o.straighten) {
+                val r = WallStraightener.process(current, WallStraightener.Options(snapDistance = o.snapDistance, squareCorners = o.squareCorners))
+                if (r.planes.isNotEmpty()) {
+                    current = r.mesh
+                    done += resources.getQuantityString(R.plurals.optimise_part_straighten_walls, r.wallCount, r.wallCount) +
+                        " and " + resources.getQuantityString(R.plurals.optimise_part_straighten_levels, r.levelCount, r.levelCount)
+                }
+            }
+            if (done.isEmpty()) null else current to { name: String -> getString(R.string.optimise_done, done.joinToString(", "), name) }
         }
     }
 
@@ -210,7 +291,7 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     private fun processAndOpen(
         workingText: Int,
         suffix: Int,
-        nothingText: Int = R.string.straighten_none,
+        nothingText: Int,
         work: () -> Pair<MeshData, (String) -> String>?,
     ) {
         setExportEnabled(false)
@@ -241,33 +322,6 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         }
     }
 
-    // --- Removing floating pieces ---
-
-    private fun showCleanDialog() {
-        val m = mesh ?: return
-        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
-        val content = DialogCleanBinding.inflate(layoutInflater)
-        val saved = prefs.getFloat("clean_min_area", 0.2f).coerceIn(0.05f, 2f)
-        content.cleanSlider.value = 0.05f + Math.round((saved - 0.05f) / 0.05f) * 0.05f
-        fun label() { content.cleanLabel.text = getString(R.string.clean_value, content.cleanSlider.value) }
-        label()
-        content.cleanSlider.addOnChangeListener { _, _, _ -> label() }
-        MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.clean_title)
-            .setView(content.root)
-            .setNegativeButton(R.string.cancel, null)
-            .setPositiveButton(R.string.clean_apply) { _, _ ->
-                val minArea = content.cleanSlider.value
-                prefs.edit { putFloat("clean_min_area", minArea) }
-                processAndOpen(R.string.clean_working, R.string.clean_suffix, nothingText = R.string.clean_none) {
-                    val result = MeshCleaner.removeSmallPieces(m, minArea)
-                    if (result.removedPieces == 0) null
-                    else result.mesh to { name: String -> getString(R.string.clean_done, result.removedPieces, result.removedArea, name) }
-                }
-            }
-            .show()
-    }
-
     // --- Flattening selected surfaces ---
 
     private var selecting = false
@@ -276,9 +330,10 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     @Volatile private var highlights: Map<Long, MeshData> = emptyMap()
     private val highlightColours = intArrayOf(0xF59E0B, 0x22D3EE, 0xE879F9, 0xA3E635, 0xF87171, 0x818CF8)
 
-    private fun enterSelectMode() {
+    private fun enterSelectMode(matchColour: Boolean) {
         if (mesh == null) return
         selecting = true
+        binding.matchColourSwitch.isChecked = matchColour
         selections.clear()
         updateHighlights()
         binding.selectPanel.visibility = View.VISIBLE
@@ -322,7 +377,7 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
 
     private fun updateHighlights() {
         binding.selectStatus.text =
-            if (selections.isEmpty()) getString(R.string.select_hint) else getString(R.string.select_count, selections.size)
+            if (selections.isEmpty()) getString(R.string.select_hint) else resources.getQuantityString(R.plurals.select_count, selections.size, selections.size)
         binding.selectFlattenButton.isEnabled = selections.isNotEmpty()
         binding.selectUndoButton.isEnabled = selections.isNotEmpty()
         val s = selector
@@ -342,12 +397,10 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val s = selector ?: return
         val chosen = selections.toList()
         if (chosen.isEmpty()) return
-        val square = binding.selectSquareSwitch.isChecked
+        val o = pendingOptimise ?: return
+        val m = mesh ?: return
         exitSelectMode()
-        processAndOpen(R.string.flatten_working, R.string.flatten_suffix) {
-            val result = s.flatten(chosen, squareCorners = square)
-            result.mesh to { name: String -> getString(R.string.flatten_done, result.planes.size, name) }
-        }
+        runOptimise(m, o, chosen, s)
     }
 
     private fun setExportEnabled(enabled: Boolean) {

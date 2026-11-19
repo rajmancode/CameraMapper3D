@@ -32,41 +32,50 @@
     <string name="clear_measure">Clear</string>
     <string name="delete">Delete</string>
     <string name="rename">Rename</string>
-    <string name="straighten">Straighten walls (automatic)…</string>
-    <string name="flatten_selected">Flatten selected surfaces…</string>
     <string name="select_hint">Tap each wall, floor or ceiling you want flattened. Tap a highlighted surface again to unselect it.</string>
-    <string name="select_count">%1$d selected. Tap more surfaces, or tap Flatten.</string>
     <string name="select_match_colour">Match colour</string>
-    <string name="select_square">Square corners</string>
     <string name="select_undo">Undo</string>
-    <string name="select_flatten">Flatten</string>
+    <string name="optimise">Optimisation…</string>
+    <string name="optimise_title">Optimisation</string>
+    <string name="optimise_help">Choose which clean-ups to apply. Your original scan is kept; the optimised result is saved as a new scan.</string>
+    <string name="optimise_clean">Remove floating pieces</string>
+    <string name="optimise_clean_value">Remove loose pieces smaller than %1$.2f m²</string>
+    <string name="optimise_flatten">Flatten surfaces I select</string>
+    <string name="optimise_flatten_help">Next you tap the walls, floors and ceilings to make flat. Works on curved or bent walls. Match colour stops a selection where the colour changes, e.g. at a cupboard.</string>
+    <string name="optimise_straighten">Straighten walls automatically</string>
+    <string name="optimise_square">Make corners square (90°)</string>
+    <string name="optimise_run">Optimise</string>
+    <string name="optimise_next">Next: select surfaces</string>
+    <string name="optimise_working">Optimising…</string>
+    <string name="optimise_nothing">Nothing needed changing with these options.</string>
+    <string name="optimise_suffix">optimised</string>
+    <string name="optimise_done">Optimised: %1$s. Saved as “%2$s”.</string>
     <string name="select_working">Selecting…</string>
-    <string name="flatten_working">Flattening…</string>
-    <string name="flatten_suffix">flattened</string>
-    <string name="flatten_done">Flattened %1$d surfaces. Saved as “%2$s”.</string>
-    <string name="clean">Remove floating pieces…</string>
-    <string name="clean_title">Remove floating pieces</string>
-    <string name="clean_help">Deletes small loose bits of the scan that are not connected to the main model. The largest piece is always kept. Your original scan is kept; the result is saved as a new scan.</string>
-    <string name="clean_value">Remove pieces smaller than %1$.2f m²</string>
-    <string name="clean_apply">Remove</string>
-    <string name="clean_working">Removing floating pieces…</string>
-    <string name="clean_none">No pieces smaller than that were found.</string>
-    <string name="clean_done">Removed %1$d pieces (%2$.2f m²). Saved as “%3$s”.</string>
-    <string name="clean_suffix">cleaned</string>
-    <string name="straighten_title">Straighten walls</string>
-    <string name="straighten_help">Makes walls exactly flat and upright, and floors, ceilings and table tops exactly level. Furniture and other objects are left as scanned. Your original scan is kept; the result is saved as a new scan.</string>
-    <string name="straighten_square">Make corners square (90°)</string>
     <string name="straighten_snap_title">Snap distance</string>
     <string name="straighten_snap_value">Snap distance: %1$d cm</string>
-    <string name="straighten_snap_help">How far points may be moved onto a wall or floor. Larger fixes bigger bumps, but can also flatten small details close to walls.</string>
-    <string name="straighten_apply">Straighten</string>
-    <string name="straighten_working">Straightening…</string>
-    <string name="straighten_none">No flat walls or floors were found to straighten.</string>
-    <string name="straighten_done">Straightened %1$d walls and %2$d floors/ceilings. Saved as “%3$s”.</string>
-    <string name="straighten_suffix">straightened</string>
     <string name="rename_title">Rename scan</string>
     <string name="scan_name">Name</string>
     <string name="delete_confirm">Delete this scan?</string>
     <string name="cancel">Cancel</string>
     <string name="load_failed">Could not open the scan: %1$s</string>
+    <plurals name="select_count">
+        <item quantity="one">%1$d surface selected. Tap more surfaces, or tap Optimise.</item>
+        <item quantity="other">%1$d surfaces selected. Tap more surfaces, or tap Optimise.</item>
+    </plurals>
+    <plurals name="optimise_part_flatten">
+        <item quantity="one">flattened %1$d selected surface</item>
+        <item quantity="other">flattened %1$d selected surfaces</item>
+    </plurals>
+    <plurals name="optimise_part_clean">
+        <item quantity="one">removed %1$d floating piece</item>
+        <item quantity="other">removed %1$d floating pieces</item>
+    </plurals>
+    <plurals name="optimise_part_straighten_walls">
+        <item quantity="one">straightened %1$d wall</item>
+        <item quantity="other">straightened %1$d walls</item>
+    </plurals>
+    <plurals name="optimise_part_straighten_levels">
+        <item quantity="one">%1$d floor/ceiling</item>
+        <item quantity="other">%1$d floors/ceilings</item>
+    </plurals>
 </resources>

@@ -72,7 +72,7 @@
             android:layout_weight="1"
             android:hint="@string/detail_label">
 
-            <AutoCompleteTextView
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
                 android:id="@+id/detailPicker"
                 android:contentDescription="@string/detail_label"
                 android:layout_width="match_parent"
