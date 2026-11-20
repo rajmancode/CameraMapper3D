@@ -9,16 +9,25 @@ import kotlin.math.abs
 import kotlin.math.sqrt
 
 
-/** Opens PLY or OBJ meshes from ScanMesh or other apps and scanners. Units are assumed to be metres. */
+/** Opens GLB, PLY or OBJ meshes from ScanMesh or other apps and scanners. Units are assumed to be metres. */
 object MeshImporter {
-    /** Reads a PLY or OBJ file, detecting which from its first bytes. */
-    fun read(input: InputStream): MeshData {
+    /**
+     * Reads a GLB, PLY or OBJ file, detecting which from its first bytes.
+     * @param images decodes texture pictures, so textured GLB models keep their colours.
+     */
+    fun read(input: InputStream, images: ImageDecoder? = null): MeshData {
         val stream = BufferedInputStream(input, 1 shl 16)
         stream.mark(4)
-        val magic = ByteArray(3)
-        val n = stream.read(magic)
+        val magic = ByteArray(4)
+        var n = 0 // (InputStream.readNBytes is not available on older Android)
+        while (n < 4) { val r = stream.read(magic, n, 4 - n); if (r < 0) break; n += r }
         stream.reset()
-        return if (n == 3 && String(magic, Charsets.US_ASCII) == "ply") PlyReader.read(stream) else ObjReader.read(stream)
+        val head = String(magic, 0, n, Charsets.US_ASCII)
+        return when {
+            head == "glTF" -> GlbReader.read(stream, images)
+            head.startsWith("ply") -> PlyReader.read(stream)
+            else -> ObjReader.read(stream)
+        }
     }
 
     internal fun finish(pos: FloatArray, normals: FloatArray?, colors: ByteArray?, idx: IntArray): MeshData {

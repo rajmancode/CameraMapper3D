@@ -14,7 +14,11 @@ the model and export it to other tools.
   frames that saw it.
 - **Measurements.** Tap two points on the finished model to get the straight-line distance, plus
   its horizontal and vertical parts. ARCore's world is aligned with gravity.
-- **Export.** Share a scan as **PLY** (binary, with colours and normals) or **OBJ** (with
+- **Export, in colour.** Share a scan or save it to the phone as **GLB** (colour shows in almost every
+  viewer: Windows 3D Viewer, Blender, phone 3D apps, web viewers), **PLY** (colour in MeshLab and
+  CloudCompare) or **OBJ** (opens almost anywhere; colour only in some apps). Units are metres and Y is up.
+- **Import, in colour.** Open GLB, PLY or OBJ files from PCs, other scanner apps and 3D tools.
+  Vertex colours are kept, and for textured GLB models the texture colours are copied onto the model.
   per-vertex colours) to MeshLab, CloudCompare, Blender, or CAD/BIM tools. Units are metres and
   Y is up.
 - **Saved scans.** Every scan is saved on the phone. Open it again from the start screen.

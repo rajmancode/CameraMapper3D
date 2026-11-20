@@ -119,8 +119,7 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             if (snapJustSelected) snapJustSelected = false else showSnapDialog()
         }
         binding.rulerSnap.setOnLongClickListener { binding.rulerGroup.check(R.id.rulerSnap); snapJustSelected = false; showSnapDialog(); true }
-        binding.plyButton.setOnClickListener { showExportChoice(ScanStore.Format.PLY) }
-        binding.objButton.setOnClickListener { showExportChoice(ScanStore.Format.OBJ) }
+        binding.exportButton.setOnClickListener { showExportFormats() }
         binding.selectCancelButton.setOnClickListener { exitSelectMode() }
         binding.selectUndoButton.setOnClickListener {
             if (selections.isNotEmpty()) selections.removeAt(selections.size - 1)
@@ -442,8 +441,7 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
 
     private fun setExportEnabled(enabled: Boolean) {
-        binding.plyButton.isEnabled = enabled
-        binding.objButton.isEnabled = enabled
+        binding.exportButton.isEnabled = enabled
     }
 
     // --- Export: share with another app, or save a file to the device ---
@@ -453,6 +451,19 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
     }
     private val saveObj = registerForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
         if (uri != null) saveExport(ScanStore.Format.OBJ, uri)
+    }
+    private val saveGlb = registerForActivityResult(ActivityResultContracts.CreateDocument("model/gltf-binary")) { uri ->
+        if (uri != null) saveExport(ScanStore.Format.GLB, uri)
+    }
+
+    /** First choose the file format (each says where its colour shows), then share or save. */
+    private fun showExportFormats() {
+        val formats = listOf(ScanStore.Format.GLB, ScanStore.Format.PLY, ScanStore.Format.OBJ)
+        val labels = arrayOf(getString(R.string.export_glb), getString(R.string.export_ply_desc), getString(R.string.export_obj_desc))
+        MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.export_format_title)
+            .setItems(labels) { _, which -> showExportChoice(formats[which]) }
+            .show()
     }
 
     private fun showExportChoice(format: ScanStore.Format) {
@@ -464,7 +475,11 @@ class ViewerActivity : AppCompatActivity(), GLSurfaceView.Renderer {
                     share(format)
                 } else {
                     val suggested = "${ScanStore.displayName(file)}.${format.extension}"
-                    if (format == ScanStore.Format.PLY) savePly.launch(suggested) else saveObj.launch(suggested)
+                    when (format) {
+                        ScanStore.Format.PLY -> savePly.launch(suggested)
+                        ScanStore.Format.OBJ -> saveObj.launch(suggested)
+                        ScanStore.Format.GLB -> saveGlb.launch(suggested)
+                    }
                 }
             }
             .show()

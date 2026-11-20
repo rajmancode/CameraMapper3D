@@ -7,6 +7,11 @@
     <string name="importing">Importing…</string>
     <string name="import_done">Imported “%1$s”.</string>
     <string name="import_failed">Could not import this file: %1$s</string>
+    <string name="export">Export…</string>
+    <string name="export_format_title">Export format</string>
+    <string name="export_glb">GLB (recommended) — colour shows in almost everything: Windows 3D Viewer, Blender, phone 3D apps, web viewers</string>
+    <string name="export_ply_desc">PLY — colour in MeshLab and CloudCompare; in Blender, switch the view to show the colour attribute</string>
+    <string name="export_obj_desc">OBJ — opens in nearly every CAD and 3D tool; colour shows only in some (MeshLab, CloudCompare)</string>
     <string name="export_share">Share…</string>
     <string name="export_save">Save to device…</string>
     <string name="export_title">Export as %1$s</string>
@@ -41,8 +46,6 @@
     <string name="nothing_scanned">Nothing has been scanned yet.</string>
     <string name="memory_limit">Scan memory limit reached. Finish this scan, or use a coarser detail level for large sites.</string>
     <string name="hint_start">Point the camera at the site and tap Start. Move slowly and cover surfaces from several angles.</string>
-    <string name="export_ply">PLY</string>
-    <string name="export_obj">OBJ</string>
     <string name="measure_hint">Tap two points on the model to measure.</string>
     <string name="measure_second">Tap a second point…</string>
     <string name="ruler_mode">Ruler mode</string>

@@ -3,7 +3,11 @@ package com.cameramapper3d.app
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.core.content.FileProvider
+import com.cameramapper3d.core.DecodedImage
+import com.cameramapper3d.core.GlbWriter
+import com.cameramapper3d.core.ImageDecoder
 import com.cameramapper3d.core.MeshData
 import com.cameramapper3d.core.MeshImporter
 import com.cameramapper3d.core.ObjWriter
@@ -58,14 +62,31 @@ object ScanStore {
 
     fun load(file: File): MeshData = file.inputStream().use { PlyReader.read(it) }
 
-    /** Reads a PLY or OBJ file from another app or scanner. */
-    fun import(input: InputStream): MeshData = MeshImporter.read(input)
+    /** Reads a GLB, PLY or OBJ file from another app or scanner, keeping its colours (and texture colours). */
+    fun import(input: InputStream): MeshData = MeshImporter.read(input, AndroidImageDecoder)
+
+    /** Decodes texture pictures for import, shrinking huge ones so they fit in memory. */
+    private object AndroidImageDecoder : ImageDecoder {
+        override fun decode(bytes: ByteArray): DecodedImage? {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 2048) sample *= 2
+            val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+                ?: return null
+            val px = IntArray(bmp.width * bmp.height)
+            bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+            return DecodedImage(bmp.width, bmp.height, px).also { bmp.recycle() }
+        }
+    }
 
     /** Writes the scan in [format] to [out] (e.g. a file the user picked with "Save to device"). */
     fun writeExport(scan: File, mesh: MeshData, format: Format, out: OutputStream) {
         when (format) {
             Format.PLY -> scan.inputStream().use { it.copyTo(out, 1 shl 16) }
             Format.OBJ -> ObjWriter.write(mesh, out)
+            Format.GLB -> GlbWriter.write(mesh, out, name = displayName(scan))
         }
         out.flush()
     }
@@ -125,6 +146,8 @@ object ScanStore {
     private const val THUMBNAIL_SIZE = 192
 
     enum class Format(val extension: String, val mime: String) {
+        /** Colour shows in almost every viewer (Windows, Blender, phones, web). */
+        GLB("glb", "model/gltf-binary"),
         PLY("ply", "application/octet-stream"),
         OBJ("obj", "text/plain"),
     }
@@ -133,10 +156,12 @@ object ScanStore {
     fun shareIntent(context: Context, source: File, mesh: MeshData, format: Format): Intent {
         val file = when (format) {
             Format.PLY -> source
-            Format.OBJ -> {
+            Format.OBJ, Format.GLB -> {
                 val exports = File(context.cacheDir, "exports").apply { mkdirs() }
                 exports.listFiles()?.forEach { it.delete() }
-                File(exports, source.nameWithoutExtension + ".obj").also { f -> f.outputStream().use { ObjWriter.write(mesh, it) } }
+                File(exports, "${source.nameWithoutExtension}.${format.extension}").also { f ->
+                    f.outputStream().use { writeExport(source, mesh, format, it) }
+                }
             }
         }
         val uri = FileProvider.getUriForFile(context, context.packageName + ".files", file)

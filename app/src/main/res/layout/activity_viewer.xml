@@ -181,20 +181,11 @@
                 android:text="@string/clear_measure" />
 
             <com.google.android.material.button.MaterialButton
-                android:id="@+id/plyButton"
+                android:id="@+id/exportButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1.2"
-                android:text="@string/export_ply" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/objButton"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1.2"
-                android:text="@string/export_obj" />
+                android:layout_weight="1.4"
+                android:text="@string/export" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

@@ -216,6 +216,9 @@ class ReconstructionTest {
         assertContentEquals(mesh.colors, back.colors)
         assertContentEquals(mesh.indices, back.indices)
 
+        // A realistic coloured export, checked with the Khronos glTF validator: core/build/scan-test.glb
+        java.io.File("build/scan-test.glb").outputStream().use { GlbWriter.write(mesh, it, name = "Synthetic scan") }
+
         val obj = ByteArrayOutputStream().also { ObjWriter.write(mesh, it) }.toString(Charsets.US_ASCII)
         val lines = obj.lines()
         assertEquals(mesh.vertexCount, lines.count { it.startsWith("v ") })
